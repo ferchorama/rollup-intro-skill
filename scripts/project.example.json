@@ -1,0 +1,594 @@
+{
+ "_comment": "Example project (Zach Pandl v2 EDL). Relative paths resolve against THIS file's folder. music/sfx/logo/fonts_dir are omitted so the bundled assets/ are used; add them to override. device: auto|cpu|cuda|qsv|d3d11va|dxva2|vaapi|videotoolbox. Face framing: run `introkit.py frame --project THIS` before building; it writes per-shot crop_x/crop_y/crop_w/crop_h (start crop, falls back to the global crop), push {x,y,w,h} (end crop of the face-anchored push-in), punch, push_ease and a framing report into <name>.framed.json. Per-shot frame_lock: true keeps a hand crop; face_roi: [x,y,w,h] picks the person when two faces share the frame. The old shot key punch without push is a legacy centre zoom; do not use it (C6).",
+ "name": "THE_ROLLUP_Zach_Pandl_ColdOpen_v2",
+ "fps": 30,
+ "width": 1920,
+ "height": 1080,
+ "src": "example/Guest Name.mp4",
+ "ref": "example/IMG_9231.MP4",
+ "crop": {
+  "w": 1280,
+  "h": 720,
+  "y": 31
+ },
+ "grade": "unsharp=5:5:0.45,eq=contrast=1.07:saturation=1.05:brightness=0.004:gamma=0.98,vignette=PI/5",
+ "fonts": {
+  "anton": "Anton-Regular.ttf",
+  "playfair": "PlayfairDisplay-Italic.ttf",
+  "barlow": "BarlowCondensed-Bold.ttf"
+ },
+ "sfx": {
+  "boom_format": "s16le",
+  "tape_format": "s16le",
+  "tape_at": 21.47,
+  "sting_format": "s16le",
+  "sting_at": 28.237
+ },
+ "cards": {
+  "name": [
+   "ZACH",
+   "PANDL"
+  ],
+  "title": "HEAD OF RESEARCH, GRAYSCALE",
+  "tagline": "ZACH ON ZCASH AT 10 AND MIDTERMS",
+  "logo_w": 780,
+  "portrait_frame": 105,
+  "portrait_image": "example/portrait_154.2.png",
+  "portrait_box": [
+   1130,
+   30,
+   1810,
+   1010
+  ]
+ },
+ "shots": [
+  {
+   "i": 1,
+   "kind": "clip",
+   "beat": "1 HOOK",
+   "src_in": 618.3,
+   "frames": 116,
+   "crop_x": 0,
+   "side": "left",
+   "cy": 540,
+   "maxw": 1000,
+   "speaker": "guest",
+   "lines": [
+    {
+     "kind": "playfair",
+     "size": 130,
+     "colour": [
+      242,
+      231,
+      213
+     ],
+     "words": [
+      0,
+      1,
+      2,
+      3,
+      4
+     ],
+     "page": 0
+    },
+    {
+     "kind": "anton",
+     "size": 230,
+     "colour": [
+      255,
+      255,
+      255
+     ],
+     "words": [
+      5
+     ],
+     "page": 0
+    },
+    {
+     "kind": "anton",
+     "size": 230,
+     "colour": [
+      255,
+      255,
+      255
+     ],
+     "words": [
+      6
+     ],
+     "page": 1,
+     "gold": [
+      6
+     ]
+    },
+    {
+     "kind": "anton",
+     "size": 230,
+     "colour": [
+      255,
+      255,
+      255
+     ],
+     "words": [
+      7
+     ],
+     "page": 1
+    }
+   ]
+  },
+  {
+   "i": 2,
+   "kind": "black",
+   "frames": 10
+  },
+  {
+   "i": 3,
+   "kind": "clip",
+   "beat": "2 HOST Q1 (Robbie)",
+   "src_in": 420.5,
+   "frames": 183,
+   "crop_x": 640,
+   "side": "right",
+   "cy": 540,
+   "maxw": 850,
+   "speaker": "host",
+   "lines": [
+    {
+     "kind": "playfair",
+     "size": 110,
+     "colour": [
+      242,
+      231,
+      213
+     ],
+     "words": [
+      0,
+      1,
+      2
+     ],
+     "page": 0
+    },
+    {
+     "kind": "playfair",
+     "size": 110,
+     "colour": [
+      242,
+      231,
+      213
+     ],
+     "words": [
+      3,
+      4,
+      5
+     ],
+     "page": 0
+    },
+    {
+     "kind": "anton",
+     "size": 146,
+     "colour": [
+      255,
+      255,
+      255
+     ],
+     "words": [
+      6
+     ],
+     "page": 0
+    },
+    {
+     "kind": "barlow",
+     "size": 81,
+     "colour": [
+      255,
+      255,
+      255
+     ],
+     "words": [
+      7,
+      8
+     ],
+     "page": 0
+    },
+    {
+     "kind": "anton",
+     "size": 146,
+     "colour": [
+      255,
+      255,
+      255
+     ],
+     "words": [
+      9
+     ],
+     "page": 1,
+     "gold": [
+      9
+     ]
+    },
+    {
+     "kind": "anton",
+     "size": 146,
+     "colour": [
+      255,
+      255,
+      255
+     ],
+     "words": [
+      10
+     ],
+     "page": 1,
+     "gold": [
+      9
+     ]
+    },
+    {
+     "kind": "playfair",
+     "size": 110,
+     "colour": [
+      242,
+      231,
+      213
+     ],
+     "words": [
+      11,
+      12,
+      13
+     ],
+     "page": 1
+    }
+   ]
+  },
+  {
+   "i": 4,
+   "kind": "black",
+   "frames": 10
+  },
+  {
+   "i": 5,
+   "kind": "clip",
+   "beat": "3 GUEST ANSWER",
+   "src_in": 507.85,
+   "frames": 181,
+   "crop_x": 0,
+   "side": "left",
+   "cy": 540,
+   "maxw": 880,
+   "speaker": "guest",
+   "lines": [
+    {
+     "kind": "playfair",
+     "size": 120,
+     "colour": [
+      242,
+      231,
+      213
+     ],
+     "words": [
+      0,
+      1
+     ],
+     "page": 0
+    },
+    {
+     "kind": "playfair",
+     "size": 120,
+     "colour": [
+      242,
+      231,
+      213
+     ],
+     "words": [
+      2,
+      3
+     ],
+     "page": 0
+    },
+    {
+     "kind": "anton",
+     "size": 195,
+     "colour": [
+      255,
+      255,
+      255
+     ],
+     "words": [
+      4
+     ],
+     "page": 0
+    },
+    {
+     "kind": "barlow",
+     "size": 86,
+     "colour": [
+      255,
+      255,
+      255
+     ],
+     "words": [
+      5,
+      6,
+      7,
+      8,
+      9
+     ],
+     "page": 1
+    },
+    {
+     "kind": "anton",
+     "size": 153,
+     "colour": [
+      255,
+      255,
+      255
+     ],
+     "words": [
+      10,
+      11
+     ],
+     "page": 1,
+     "gold": [
+      10
+     ]
+    },
+    {
+     "kind": "anton",
+     "size": 153,
+     "colour": [
+      255,
+      255,
+      255
+     ],
+     "words": [
+      12
+     ],
+     "page": 1,
+     "gold": [
+      10
+     ]
+    },
+    {
+     "kind": "playfair",
+     "size": 120,
+     "colour": [
+      242,
+      231,
+      213
+     ],
+     "words": [
+      13,
+      14
+     ],
+     "page": 2
+    },
+    {
+     "kind": "playfair",
+     "size": 120,
+     "colour": [
+      242,
+      231,
+      213
+     ],
+     "words": [
+      15,
+      16
+     ],
+     "page": 2
+    }
+   ]
+  },
+  {
+   "i": 6,
+   "kind": "black",
+   "frames": 10
+  },
+  {
+   "i": 7,
+   "kind": "clip",
+   "beat": "4 HOST Q2 (Robbie)",
+   "src_in": 91.95,
+   "frames": 140,
+   "crop_x": 640,
+   "side": "right",
+   "cy": 540,
+   "maxw": 900,
+   "speaker": "host",
+   "lines": [
+    {
+     "kind": "playfair",
+     "size": 110,
+     "colour": [
+      242,
+      231,
+      213
+     ],
+     "words": [
+      0,
+      1,
+      2
+     ],
+     "page": 0
+    },
+    {
+     "kind": "playfair",
+     "size": 110,
+     "colour": [
+      242,
+      231,
+      213
+     ],
+     "words": [
+      3,
+      4,
+      5
+     ],
+     "page": 0
+    },
+    {
+     "kind": "anton",
+     "size": 135,
+     "colour": [
+      255,
+      255,
+      255
+     ],
+     "words": [
+      6
+     ],
+     "page": 0
+    },
+    {
+     "kind": "anton",
+     "size": 135,
+     "colour": [
+      255,
+      255,
+      255
+     ],
+     "words": [
+      7
+     ],
+     "page": 0
+    },
+    {
+     "kind": "barlow",
+     "size": 81,
+     "colour": [
+      255,
+      255,
+      255
+     ],
+     "words": [
+      8,
+      9
+     ],
+     "page": 1
+    },
+    {
+     "kind": "anton",
+     "size": 195,
+     "colour": [
+      255,
+      255,
+      255
+     ],
+     "words": [
+      10
+     ],
+     "page": 1,
+     "gold": [
+      10
+     ]
+    }
+   ]
+  },
+  {
+   "i": 8,
+   "kind": "black",
+   "frames": 10
+  },
+  {
+   "i": 9,
+   "kind": "card",
+   "beat": "5 TITLE CARD",
+   "frames": 78
+  },
+  {
+   "i": 10,
+   "kind": "black",
+   "frames": 10
+  },
+  {
+   "i": 11,
+   "kind": "clip",
+   "beat": "6 BUTTON",
+   "src_in": 29.15,
+   "frames": 87,
+   "audio_out": 32.04,
+   "fade_out_ms": 45,
+   "crop_x": 640,
+   "side": "left",
+   "cy": 540,
+   "maxw": 1000,
+   "speaker": "guest",
+   "lines": [
+    {
+     "kind": "playfair",
+     "size": 130,
+     "colour": [
+      242,
+      231,
+      213
+     ],
+     "words": [
+      0,
+      1,
+      2
+     ],
+     "page": 0
+    },
+    {
+     "kind": "anton",
+     "size": 230,
+     "colour": [
+      255,
+      255,
+      255
+     ],
+     "words": [
+      3
+     ],
+     "page": 0
+    },
+    {
+     "kind": "anton",
+     "size": 195,
+     "colour": [
+      255,
+      255,
+      255
+     ],
+     "words": [
+      4,
+      5
+     ],
+     "page": 1,
+     "gold": [
+      5
+     ]
+    },
+    {
+     "kind": "barlow",
+     "size": 101,
+     "colour": [
+      255,
+      255,
+      255
+     ],
+     "words": [
+      6,
+      7
+     ],
+     "page": 1
+    }
+   ]
+  },
+  {
+   "i": 12,
+   "kind": "black",
+   "frames": 10
+  },
+  {
+   "i": 13,
+   "kind": "end",
+   "beat": "7 LOGO",
+   "frames": 60
+  }
+ ],
+ "device": "auto",
+ "hwaccel": "auto",
+ "_comment_2026_11_02": "Optional keys (session 2): layout side|classic (frame planner, default side); speakers {name: {pick: largest|leftmost|rightmost, text_side: left|right, zoom}}; shot who (speaker name); allow_top_touch true | [shot ids / names / roles]; frame_bounds [x,y,w,h]; avoid [[x,y,w,h]]; speech_fade_ms (25); caption_capitalise (true); remaster_aac (true); music_fade_out / duck_hold [a,b] or false (default automatic from sfx.sting_at); sfx.sting_max_s (2.4); shot matte {x0,x1,feather} (written by frame).",
+ "_comment_2026_11_03": "Optional keys (2026-11-03): out_dir (deliverables folder; default <folder of src>\\intros, scratch in <out_dir>\\work; build --out wins; relative = against this file). Per shot: gain_db (speech gain in dB after the dialogue norm) and duck (music duck depth 0-1 under that shot, default 0.72); build prints speech-vs-music per clip, aim for >= ~+10 dB.",
+ "layout": "side",
+ "speech_fade_ms": 25,
+ "allow_top_touch": []
+}

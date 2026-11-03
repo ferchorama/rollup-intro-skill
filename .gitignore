@@ -1,0 +1,118 @@
+# ============================================================
+#  rollup-intro skill
+#  Tracked on purpose: SKILL/RULES/TOOLS docs, references/,
+#  scripts/*.py, requirements*.txt, setup.*, and every file in
+#  assets/ (fonts, logo, music, sfx, models/ + licences).
+#  Everything below is machine-local, generated, or a backup.
+# ============================================================
+
+# ---- one-folder tool environment (setup.ps1 / setup.sh) -----
+# ~9.6 GB: uv, uv-managed CPython, venv, Whisper model, HF cache,
+# portable ffmpeg. Rebuilt by setup, never committed.
+# Default location is <skill>/.rollup-intro-env ; ROLLUP_INTRO_HOME
+# may point elsewhere (nothing to ignore then).
+.rollup-intro-env/
+rollup-intro-env/
+
+# Same env, if someone relocated it into the repo root
+/uv/
+/python/
+/venv/
+/env/
+/tools/
+/cache/
+/hf/
+/models/
+
+# ---- Python bytecode & build output ------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.pyre/
+.coverage
+.coverage.*
+htmlcov/
+*.egg-info/
+*.dist-info/
+dist/
+build/
+
+# ---- media: sources, renders, generated audio --------------
+# Deliverables are libx264 CRF 15 MP4s; session sources are huge.
+# .mp3 (bundled music bed) and .raw (bundled SFX) are NOT matched,
+# so assets/ music and sfx stay tracked.
+*.mp4
+*.mov
+*.mkv
+*.m4v
+*.avi
+*.mxf
+*.mts
+*.m2ts
+*.webm
+*.wav
+*.m4a
+*.aac
+*.flac
+*.aif
+*.aiff
+*.srt
+*.vtt
+*.ass
+
+# ---- generated project / QC scratch ------------------------
+# frame writes <name>.framed.json; assemble/vet/qc write words,
+# sets and qc json into intros/work/. All reproducible.
+work/
+intros/
+*.framed.json
+qc_*.json
+words_*.json
+sets.json
+contact_sheet*.png
+*.concat.txt
+
+# ---- transcripts & diarization output ----------------------
+work_*/**/*.json
+transcripts/
+
+# ---- backups, temp, patches --------------------------------
+# e.g. scripts/introkit.py.bak_pre_gain, *.orig from old tools
+*.bak
+*.bak_*
+*.bak.*
+*.orig
+*.rej
+*.patch
+*.diff
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+*.pid
+
+# ---- logs --------------------------------------------------
+*.log
+logs/
+
+# ---- secrets / local config --------------------------------
+.env
+.env.*
+!.env.example
+*.local.json
+
+# ---- editors & OS junk -------------------------------------
+.vscode/
+.idea/
+*.code-workspace
+.DS_Store
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+ehthumbs.db
+desktop.ini

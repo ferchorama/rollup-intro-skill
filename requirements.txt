@@ -1,0 +1,15 @@
+# Rollup intro skill (introkit) - Python dependencies, all platforms.
+# Installed by setup.ps1 / setup.sh with astral uv into ONE folder:
+#   <skill>/.rollup-intro-env/venv   (or $ROLLUP_INTRO_HOME/venv)
+# Minimum versions are the oldest we rely on; upper bounds block known breakage.
+# Exact versions that were tested on 2026-10-30 are pinned in requirements.lock.txt.
+numpy>=1.26,<3
+pillow>=10.0
+opencv-python-headless>=4.8          # title-card portrait sampling
+faster-whisper>=1.2.1,<2             # ASR, Whisper large-v3-turbo (always)
+ctranslate2>=4.5,<5                  # faster-whisper backend: CUDA or CPU int8 (no Apple MPS)
+av>=11,<19                           # PyAV 19 breaks faster-whisper 1.2.1 audio decode
+huggingface-hub>=0.23                # model download into the tool folder
+psutil>=5.9                          # physical-core count for CPU threads
+scipy>=1.11                          # diarization: average-linkage clustering
+onnxruntime>=1.18                    # speaker-embedding check; macOS wheel includes CoreML EP
