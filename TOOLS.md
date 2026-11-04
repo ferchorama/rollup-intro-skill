@@ -1,4 +1,4 @@
-# Tools: setup, hardware and exact usage
+﻿# Tools: setup, hardware and exact usage
 
 Everything the skill runs lives in **this folder**. Nothing outside it is required apart from
 ffmpeg (and even that can be installed portably into the env folder). Paths in this file are
@@ -49,7 +49,7 @@ Windows/Linux with the CUDA wheels, makes their DLLs/.so files loadable.
 ## 2. ffmpeg (per OS)
 
 introkit looks for ffmpeg in this order: `--ffmpeg PATH`, `INTROKIT_FFMPEG`, `PATH`,
-`<env>/tools/ffmpeg/bin`. Any build ≥ 6 with libx264 works (tested: 8.0.1 Windows gyan
+`<env>/tools/ffmpeg/bin`. Any build â‰¥ 6 with libx264 works (tested: 8.0.1 Windows gyan
 build, 7.1.5 Debian).
 
 | OS | Install |
@@ -69,7 +69,7 @@ build, 7.1.5 Debian).
 | Frame-accurate still | `-i FILE -ss T -frames:v 1` (ss **after** -i) |
 | Delivery (introkit does this) | `-c:v libx264 -preset medium -crf 15 -profile:v high -pix_fmt yuv420p -r 30 -g 60 -movflags +faststart -threads 0 -c:a aac -b:a 320k -ar 48000 -ac 2` |
 
-**Traps**: `-ss` before `-i` is a fast seek — render only, never verify with it.
+**Traps**: `-ss` before `-i` is a fast seek â€” render only, never verify with it.
 `-frames:v N` is the only reliable frame-exact segment length; verify with `-count_frames`.
 `overlay` needs `format=auto` when the base is yuv420p and the overlay RGBA.
 
@@ -97,7 +97,7 @@ Forcing: `--device cpu|cuda|qsv|d3d11va|dxva2|vaapi|videotoolbox` (aliases: `nvi
 `INTROKIT_DEVICE` / `INTROKIT_HWACCEL`; project keys `"device"` / `"hwaccel"`. A forced tier
 that fails its test prints a warning and runs on CPU.
 
-What acceleration touches — and what it never touches:
+What acceleration touches â€” and what it never touches:
 
 | Work | Accelerated by | CPU path |
 |---|---|---|
@@ -105,7 +105,7 @@ What acceleration touches — and what it never touches:
 | face detection (YuNet 2023mar, 228 KB ONNX) | never (CPU is faster than the GPU round trip at this size) | OpenCV DNN, half-scale frames |
 | review previews | the tier's encoder | libx264 veryfast |
 | Whisper large-v3-turbo | CUDA float16 (NVIDIA only) | **int8**, `cpu_threads` = physical cores |
-| speaker embeddings (ONNX) | CUDA EP › OpenVINO EP › DirectML EP › CoreML EP (if installed) | CPU EP, intra-op threads = physical cores |
+| speaker embeddings (ONNX) | CUDA EP â€º OpenVINO EP â€º DirectML EP â€º CoreML EP (if installed) | CPU EP, intra-op threads = physical cores |
 | **final deliverable** | **never** | **libx264 CRF 15 preset medium, always** |
 
 The final encode is the same on every machine, so the deliverable does not depend on the
@@ -120,11 +120,11 @@ the GPU numbers from an i7-10700 + RTX 3060 desktop):
 | Step | CPU only | NVIDIA |
 |---|---|---|
 | hardware self-test | ~2 s | ~1.9 s |
-| Whisper large-v3-turbo, 3.9 s span (cold, incl. model load) | 11.9 s | — |
-| Whisper, 23.7 s clip (incl. load) | 6.4 s (3.7× realtime) | — |
-| Whisper, 45 s clip (incl. load) | 8.6 s (5.2× realtime) | — |
-| Whisper, full episode | not measured | ~30× realtime |
-| diarization, 23.7 s / 45 s of speech | 2.3–2.7 s / 3.9 s | (embeddings ran on CPU EP) |
+| Whisper large-v3-turbo, 3.9 s span (cold, incl. model load) | 11.9 s | â€” |
+| Whisper, 23.7 s clip (incl. load) | 6.4 s (3.7Ã— realtime) | â€” |
+| Whisper, 45 s clip (incl. load) | 8.6 s (5.2Ã— realtime) | â€” |
+| Whisper, full episode | not measured | ~30Ã— realtime |
+| diarization, 23.7 s / 45 s of speech | 2.3â€“2.7 s / 3.9 s | (embeddings ran on CPU EP) |
 | build, 7.9 s mini project (236 frames) | 37 s | not measured |
 | `frame`, 6 clip shots / 619 scanned frames, incl. verify back-off | not measured | 50 s (scan 19 s, plan+verify 30 s) |
 | build, 21 s intro (632 frames) with 2 face push-ins | not measured | 100-140 s |
@@ -143,7 +143,7 @@ python scripts/introkit.py transcribe --src VIDEO --out work/ [--start S --dur D
 
 Model: **always Whisper large-v3-turbo** (`mobiuslabsgmbh/faster-whisper-large-v3-turbo`
 via faster-whisper), float16 on CUDA, int8 elsewhere; a CUDA failure falls back to CPU int8.
-Audio decode is ffmpeg → 16 kHz mono float32 (PyAV is not used for audio).
+Audio decode is ffmpeg â†’ 16 kHz mono float32 (PyAV is not used for audio).
 
 Output `work/<stem>.json` (also `.srt`, `.txt`), times in **source seconds**:
 
@@ -155,9 +155,9 @@ Output `work/<stem>.json` (also `.srt`, `.txt`), times in **source seconds**:
 
 `speaker` is `null` unless diarized. SRT lines carry `[speaker]` when known.
 
-When to transcribe: see the table in `SKILL.md`. **Traps**: Whisper suppresses fillers —
+When to transcribe: see the table in `SKILL.md`. **Traps**: Whisper suppresses fillers â€”
 cross-check against the source SRT (rule 018); word starts can run ~0.2 s early (rule 017);
-for QC run VAD on (primary) and VAD off as a second, high-sensitivity pass (rule 025) —
+for QC run VAD on (primary) and VAD off as a second, high-sensitivity pass (rule 025) â€”
 VAD off can hallucinate over music, so a VAD-off-only token needs a listen.
 
 ## 5. Speakers: `diarize` and `voiceprint` (scripts/speakers.py)
@@ -176,10 +176,10 @@ python scripts/introkit.py voiceprint --src VIDEO --span hook=618.3:3.87 --span 
     --enroll guest=1520:12 --enroll host=4:16
 ```
 
-Method: speech regions from the transcript's word times (energy VAD if none) → 1.5 s windows,
-0.5 s hop → embeddings → with `--enroll`: nearest enrolled voice (labels are your names);
+Method: speech regions from the transcript's word times (energy VAD if none) â†’ 1.5 s windows,
+0.5 s hop â†’ embeddings â†’ with `--enroll`: nearest enrolled voice (labels are your names);
 without: average-linkage agglomerative clustering on cosine distance, `--speakers N` if known,
-else k = 2…6 chosen by silhouette. Each word takes the label of the windows overlapping it;
+else k = 2â€¦6 chosen by silhouette. Each word takes the label of the windows overlapping it;
 cues are split where the label changes. An SRT (no word times) is labelled per cue.
 
 When it runs / is skipped:
@@ -187,19 +187,19 @@ When it runs / is skipped:
 | Situation | Diarize? |
 |---|---|
 | transcript already has speaker labels | **skip** (`diarize` refuses without `--force`) |
-| no speaker labels, and you need to know who says which candidate line | **yes** — `transcribe --diarize` or `diarize --transcript` |
+| no speaker labels, and you need to know who says which candidate line | **yes** â€” `transcribe --diarize` or `diarize --transcript` |
 | speaker-on-camera / identity gate (gates 4, rule 010) | **voiceprint** on the selected spans only, always |
 | map the hosts at the start (single vs two hosts, rule 020) | **yes**, with `--enroll` clips once you know a guest and a host span |
 
 Measured on a 23.7 s splice of five Zach Pandl EDL lines (guest/host/guest/host/guest):
-auto k chose 2 (silhouette 0.38 vs ≤0.29), 5 turns in the right order, 58/60 words right
+auto k chose 2 (silhouette 0.38 vs â‰¤0.29), 5 turns in the right order, 58/60 words right
 (both errors on the boundary word); with enrollment clips 60/60. Voiceprint cosines: same
-speaker 0.70–0.82, cross 0.09–0.22. On a natural 45 s host→guest span: k=2, one change,
-placed one word late. Decision rule (rule 010): **≥ 0.70 to the speaker's own reference and
-clear block structure**; cross-recording similarity is weaker — read the matrix, do not
+speaker 0.70â€“0.82, cross 0.09â€“0.22. On a natural 45 s hostâ†’guest span: k=2, one change,
+placed one word late. Decision rule (rule 010): **â‰¥ 0.70 to the speaker's own reference and
+clear block structure**; cross-recording similarity is weaker â€” read the matrix, do not
 threshold across sessions.
 
-**Optional alternative — pyannote.audio** (`pyannote/speaker-diarization-community-1` or
+**Optional alternative â€” pyannote.audio** (`pyannote/speaker-diarization-community-1` or
 3.1): stronger overlap handling, but it **requires a Hugging Face account and access
 token, and accepting the model's terms on its Hugging Face page**, plus torch (~2 GB). It is
 not installed by setup. If used: `uv pip install --python <env>/venv pyannote.audio`, set
@@ -220,8 +220,8 @@ not installed by setup. If used: `uv pip install --python <env>/venv pyannote.au
 | psutil | physical-core count for thread settings |
 
 `ImageFont.truetype(path, size).getbbox(text)` returns the ink box from the top of the layout
-box — subtract the ascent when placing on a baseline. Older notes use Haar cascades, which fire on
-microphones, desk edges and logos (filter to `centre_y < 0.68·H` and `width ≥ 140`), but the
+box â€” subtract the ascent when placing on a baseline. Older notes use Haar cascades, which fire on
+microphones, desk edges and logos (filter to `centre_y < 0.68Â·H` and `width â‰¥ 140`), but the
 bundled OpenCV 5 headless build has none. Use YuNet: `assets/models/face_detection_yunet_2023mar.onnx`
 (MIT, OpenCV Zoo; see `assets/models/YUNET_LICENSE.txt`). Set `OPENCV_LOG_LEVEL=ERROR` to
 silence its DNN warnings.
@@ -269,7 +269,7 @@ pillow, faster-whisper are already in the env).
 | probe / teardown | ffprobe, ffmpeg (astats, blackdetect, ebur128) |
 | transcript | `introkit.py transcribe` (Whisper large-v3-turbo) |
 | identity / hosts | `introkit.py voiceprint`, `diarize` |
-| framing | `introkit.py frame` (ffmpeg decode on the hwaccel tier → YuNet on CPU), full-frame review |
+| framing | `introkit.py frame` (ffmpeg decode on the hwaccel tier â†’ YuNet on CPU), full-frame review |
 | base picture | ffmpeg crop or `perspective` (face push-in)/scale/unsharp/eq/vignette, concat |
 | graphics | Pillow, numpy, bundled fonts and logo |
 | audio | numpy, bundled music/SFX, ffmpeg ebur128 |
@@ -278,4 +278,5 @@ pillow, faster-whisper are already in the env).
 
 ## Hype music beds (added 2026-11-04)
 - assets/music/rollup_hype_bed_140bpm_1.mp3 and rollup_hype_bed_140bpm_2.mp3: ~30 s, 140 BPM hype instrumentals. Source: ElevenLabs Music v2, generated 2026-11-04. Point a project's `music` key at one to use it; the default is still rollup_music_bed_32s.mp3. bed_2 has denser onsets from the start (no slow build). Both are loud in the first seconds, so check the shot-1 speech/music gap (aim for >= 5 dB) and add a per-shot `duck`/`gain_db` if needed.
+- assets/music/rollup_breaking_news_drums_1.mp3: ~30 s breaking-news style bed with dominant pounding stomp/clap drums (~125 BPM), ticking pulse, tense strings, brass stabs and impact hits; ends on a big hit. Source: ElevenLabs Music v2, generated 2026-11-04. Fernando's preferred direction for a high-energy cold open. Same caution: check the shot-1 speech/music gap.
 
