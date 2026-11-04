@@ -219,3 +219,14 @@ The build log prints `[introkit] level shot N: speech X dB, music Y dB, gap Z dB
 (active speech RMS vs the bed under it, pre-master). Aim for a gap of about +10 dB or more.
 Example (Diego B -> B2): button gaps +3.8 / -0.2 dB -> +13.1 / +12.0 dB with `gain_db` +5 / +7 and
 `duck` 0.85; master still -14 LUFS / TP -1.3 after AAC, music fade before the sting unchanged.
+
+## Speaker alternation and late last-word ends (2026-11-03)
+
+- `assemble` stops with an error when two consecutive beats have the same `who`. One host +
+  guest = guest / host / guest / host / guest. Fix the set, do not merge the two host beats.
+- `measure_end` (vet --write, qc speech): word end = first 60 ms run within 6 dB of the room
+  floor (was 40 ms, which mistook the /k/ closure in 'attack' for the end); tail 150 ms (was
+  80); Whisper's next-word start is no longer a hard limit (it clipped 'attack' at 50.20 when the
+  real end was ~50.34 and 'three' before its vowel decay); coarticulated words are cut at the
+  deepest envelope dip up to 250 ms past the next word's ASR start. The measured onset of the
+  next sound (12 dB over floor for 30 ms) still caps the out. Backup: sidekit.py.bak_pre_lateend.

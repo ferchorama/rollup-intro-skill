@@ -379,3 +379,19 @@ From 2026-11-03 the generated intros live next to the source: `<source folder>\i
   previous word (qc heard "Like, are ..."): move the in to the dip after it. An internal pause
   > 0.35 s in a button: split the piece at the dip (two pieces in one beat).
 
+### E4. Armani Ferrante (Backpack): no consecutive same-speaker beats
+The user rejected hook > Andy > Andy > button: with one host and the guest the speakers must
+strictly alternate (guest / host / guest / host / guest). B2 = Armani > Andy > Armani > Andy >
+Armani. `assemble` now enforces it.
+
+### E5. Last words still clipped after vet --write
+'attack' (out 50.20, vowel to ~50.27, /k/ release to ~50.36) and 'three' (vowel decay to ~399.27)
+were cut. Two causes: Whisper's next-word start capped the out (it is early, like its word ends),
+and a 40 ms floor run accepted a plosive closure as the end. Fixed in measure_end (60 ms run,
+150 ms tail, no ASR cap, deepest dip for coarticulated words). Rule: err late on final plosives
+and vowel decays.
+
+### E6. Camera cuts inside a candidate
+A host line at 1338.3 started 0.8 s on the guest camera (cut at 1339.07); qc read the penguin
+plush as a 2nd face. Run a scene-cut check (ffmpeg select=gt(scene,0.25)) on every candidate span
+before assembling.

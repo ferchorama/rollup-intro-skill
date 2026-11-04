@@ -139,6 +139,10 @@ introkit.py qc  --final F.mp4 --project P.framed.json [--words W.json] [--out qc
 - **Host lines must be engaging and specific to the guest** (what they built, a number, a
   claim to react to). Generic prompts ("What are you most excited about?") are replaced.
 - Spell names and acronyms as on the chyron / slides, not as ASR heard them (DTCC, not "DTC").
+- **Speakers strictly alternate (user rule, 2026-11-03).** Never two consecutive beats by the
+  same person. With one host + the guest: guest / host / guest / host / guest (e.g. hook > host Q >
+  guest answer > host Q > button, or simply hook > host > button). With two hosts, host > host is
+  allowed only when they are different people. `assemble` refuses a set that breaks this.
 
 ## Procedure
 
@@ -150,7 +154,8 @@ introkit.py qc  --final F.mp4 --project P.framed.json [--words W.json] [--out qc
 3. **Get the words** per the table above. Cross-check fillers against the SRT (Whisper
    suppresses them, rule 018).
 4. **Map the hosts** with a voiceprint. If the session has a **single host**, the two host
-   beats come from the same person (rule 020).
+   beats come from the same person (rule 020), but never back to back: a guest line goes
+   between them (strict alternation).
 5. **Select lines** with `references/line-selection.md`: delivery first, then cleanliness,
    hook compliance, 2-3 alternative sets plus a recommendation.
 6. **Assemble and vet.** Write the beats into `<source folder>\intros\work\sets.json`
@@ -192,7 +197,12 @@ introkit.py qc  --final F.mp4 --project P.framed.json [--words W.json] [--out qc
   and in full (final black >= 15 frames). Automatic at build; explicit `music_fade_out` /
   `duck_hold` in the project still win.
 - **Last word:** out-point at the measured acoustic end + tail, 20-25 ms speech fade
-  (`speech_fade_ms`, default 25), video follows audio.
+  (`speech_fade_ms`, default 25), video follows audio. **Err late (2026-11-03):** final plosives
+  (/k/ /t/ /p/: 'attack') and vowel decays ('three') need the later out. `vet --write` now ends a
+  word only after 60 ms at the room floor (a plosive closure is not an end), adds a 150 ms tail,
+  ignores Whisper's next-word start as a limit (only the measured onset of the next sound caps
+  it), and when the word runs into the next one cuts at the deepest energy dip. When in doubt,
+  check the 10 ms envelope and put the out after the decay/release, not on the ASR word end.
 - **Per-shot level (2026-11-03):** shot keys `gain_db` (speech gain in dB, applied after the
   global dialogue normalisation) and `duck` (music duck depth 0-1 under that shot, default
   0.72). `build` prints `level shot N: speech X dB, music Y dB, gap Z dB` for every clip; each

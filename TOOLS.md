@@ -275,3 +275,7 @@ pillow, faster-whisper are already in the env).
 | audio | numpy, bundled music/SFX, ffmpeg ebur128 |
 | mux / deliverable | ffmpeg libx264 CRF 15 + AAC |
 | QC | ffmpeg ebur128, `introkit.py qc --faces` (YuNet), `transcribe` on the deliverable, numpy |
+
+## Hype music beds (added 2026-11-04)
+- assets/music/rollup_hype_bed_140bpm_1.mp3 and rollup_hype_bed_140bpm_2.mp3: ~30 s, 140 BPM hype instrumentals. Source: ElevenLabs Music v2, generated 2026-11-04. Point a project's `music` key at one to use it; the default is still rollup_music_bed_32s.mp3. bed_2 has denser onsets from the start (no slow build). Both are loud in the first seconds, so check the shot-1 speech/music gap (aim for >= 5 dB) and add a per-shot `duck`/`gain_db` if needed.
+

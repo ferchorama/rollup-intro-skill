@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-11-03 (session 2: strict speaker alternation; later last-word ends)
+- **Strict alternation (user rule):** no two consecutive beats by the same speaker; with one host
+  + guest it is guest / host / guest / host / guest. `assemble` now refuses a set that breaks it.
+  SKILL.md, references/line-selection.md, references/pipeline.md updated.
+- **Last-word ends err late:** `sidekit.measure_end` (used by vet --write and qc) needs 60 ms at the
+  floor to end a word (was 40 ms; plosive closures read as ends), tail 150 ms (was 80), Whisper's
+  next-word start is no longer a hard cap, coarticulated words cut at the deepest dip. Cause:
+  Armani Ferrante B clipped 'attack' and 'three'. Backup: scripts/sidekit.py.bak_pre_lateend.
+
 ## 2026-11-03 (output folder; per-shot audio level)
 - **Default output folder is now `<folder of the source video>\intros\`** (user request).
   `build --out` defaults to the project `out_dir`, else `<src folder>\intros` (created if

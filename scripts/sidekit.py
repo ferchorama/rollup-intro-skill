@@ -213,6 +213,14 @@ def cmd_assemble(a) -> None:
     sp_path = Path(a.sets).resolve()
     SP = _load_json(sp_path)
     beats = SP["sets"][a.set_name]
+    # 2026-11-03 (user rule): never two consecutive beats by the same speaker. With one host + the
+    # guest that means strict guest/host/guest/host... alternation; with two hosts, host>host is fine
+    # only when they are different people.
+    for k in range(1, len(beats)):
+        if beats[k]["who"] == beats[k - 1]["who"]:
+            raise SystemExit(f"assemble: set {a.set_name}: beats {k} and {k + 1} are both '{beats[k]['who']}' "
+                             "- speakers must alternate (guest/host/guest/host... when there is one host); "
+                             "replace one of them with the other speaker's line")
     src = SP["src"]
     src_abs = src if os.path.isabs(src) else str((sp_path.parent / src).resolve())
     # 2026-11-03: default scratch = <source video folder>\intros\work (finals go to intros\ at build);
@@ -546,11 +554,15 @@ def cmd_frame_side(a, pp, proj) -> None:
 
 # ======================================================================= vet (selection time)
 
-def measure_end(ff, src, s, last_w, next_clip_in, model, tail=0.08, fade_ms=25, allow_shorten=False):
+def measure_end(ff, src, s, last_w, next_clip_in, model, tail=0.15, fade_ms=25, allow_shorten=False):
     """Acoustic end of the shot's last word + proposed out-point. Energy (10 ms RMS) relative to the
     room floor (8th percentile around the line): the word ends where the level stays within 6 dB of
-    the floor for 40 ms; the next sound starts where it rises 12 dB over the floor for 30 ms.
-    Whisper's word end is only the search start (it is often 50-400 ms early: the old out-points)."""
+    the floor for 60 ms (a plosive closure, 20-50 ms, is NOT an end); the next sound starts where it
+    rises 12 dB over the floor for 30 ms. Whisper's word end is only the search start (it is often
+    50-400 ms early: the old out-points) and Whisper's NEXT-word start is never a hard limit (it is
+    often early too: 'attack' / 'three' were clipped by it, 2026-11-03). If the word runs straight
+    into the next one (no floor run), cut at the deepest energy dip before the next word. Err late:
+    tail 150 ms after the acoustic end, capped only by the measured onset of the next sound."""
     import numpy as np
     a0, out0 = float(s["src_in"]), float(s["audio_out"])
     w0 = max(a0, out0 - 1.5)
@@ -572,17 +584,24 @@ def measure_end(ff, src, s, last_w, next_clip_in, model, tail=0.08, fade_ms=25, 
     start = min(out0, asr_end if asr_end else out0) - 0.06
     i = max(0, I(start))
     aend = None
-    while i < len(e) - 4:
-        if all(e[i + q] <= floor + 6 for q in range(4)):
+    while i < len(e) - 6:
+        if all(e[i + q] <= floor + 6 for q in range(6)):
             aend = T(i)
             break
         i += 1
-    lim = out0 + 0.6
-    if nxt_asr:
-        lim = min(lim, nxt_asr - 0.01)
+    lim = out0 + 0.8
     if next_clip_in is not None and abs(next_clip_in - out0) < 0.05:
         lim = min(lim, out0)                          # continuous join: never move it
-    j = I(aend if aend else start)
+    if aend is None or aend > (nxt_asr + 0.25 if nxt_asr else lim):
+        # coarticulated into the next word: cut at the deepest dip between our word's ASR end
+        # and a bit past the next word's ASR start (that start is often early)
+        lo = I(asr_end if asr_end else start)
+        hi = I(min(lim, nxt_asr + 0.25)) if nxt_asr else I(lim)
+        seg = e[max(0, lo):max(lo + 1, hi + 1)]
+        if len(seg):
+            aend = T(max(0, lo) + int(np.argmin(seg)))
+            tail = 0.0
+    j = I(aend if aend else start) + 1
     nxt_on = None
     while j < len(e) - 3:
         if all(e[j + q] > floor + 12 for q in range(3)):

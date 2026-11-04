@@ -42,6 +42,10 @@ these sessions are 20-30 minutes long and always contain a spare.
 
 Hosts appear in beats 2 and 4: never save a host for the last third.
 
+**Strict alternation (2026-11-03):** never two consecutive beats by the same speaker. With one
+host the order is guest / host / guest / host / guest; a 4-beat hook > host > host > button is
+NOT allowed (put a guest line between the host beats, or drop to hook > host > button).
+
 ## What makes a hook
 
 - a **claim** the guest is willing to defend in one breath ("X is not enough to do Y")
@@ -64,7 +68,8 @@ because of a subtitle, it does not work.
 ## Added 2026-10-30
 - **Hook compliance (rule 028):** flag hooks about price, returns or performance; always cut
   a safer backup hook.
-- **Single host (rule 020):** both host beats may come from one host; say so.
+- **Single host (rule 020):** both host beats may come from one host; say so. They must not be
+  consecutive (strict alternation, 2026-11-03).
 - **Out-points from energy (rule 027):** never from the ASR word end; ≈45 ms fade.
 - **Timing targets (rule 029):** hook ≈3.68 s, title card ≈19.52 s, end card ≈29.0 s,
   total ≈33.5 s.
