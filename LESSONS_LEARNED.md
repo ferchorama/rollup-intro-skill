@@ -395,3 +395,26 @@ and vowel decays.
 A host line at 1338.3 started 0.8 s on the guest camera (cut at 1339.07); qc read the penguin
 plush as a 2nd face. Run a scene-cut check (ffmpeg select=gt(scene,0.25)) on every candidate span
 before assembling.
+
+## F. Session 2026-11-12 (Kash Razzaghi; editorial checks added)
+
+### F1. Lines that read wrong out of context
+The D-series showed the failure modes a stranger notices first: a line ending on "and" (D3), a
+host line that only made sense after the previous answer ("Do you think that that's true?"), a
+filler inside a line (Kash A, "a new class of ummm entities"). `vet` now WARNs on weak openers,
+bare pronouns, back-references and mid-sentence / conjunction ends, and prints the plain script:
+do the stranger test (references/line-selection.md) once per set before framing.
+
+### F2. Shortlist first, judge second
+`signals` on a speaker-labelled transcript (`transcribe --enroll guest=... --enroll andy=...`,
+~30 s for a 15 min episode on CUDA) put 6 of the 12 lines a human later picked for Kash into its
+top 12 in ~1 s. Hand-transcripts without punctuation chop sentences badly: use the word-level
+JSON. Then score hooks (strength / curiosity / clarity / shareability + type) and open A/B/C on
+three different hook types.
+
+### F3. Right speaker on screen is a WARN, not a gate
+Mouth motion vs speech is weak evidence on one face (correct Kash shots measured r -0.04..0.51),
+so qc only WARNs when another face clearly follows the speech better or the visible mouth
+clearly does not, and says "ambiguous" otherwise. Look at a WARN shot; never re-cut on an
+"ambiguous".
+

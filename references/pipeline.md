@@ -75,10 +75,15 @@ downstream; derive it.
                  "pieces": [{"in": 858.64, "out": 862.12, "text": "Tokenization is *eating* finance."}]}]}}
 ```
 Optional `"out_dir": "D:/elsewhere"` moves the deliverables (default `<src folder>/intros`).
+Optional per beat: `"hook": {"type": "prediction", "strength": 4, "curiosity": 5, "clarity": 4,
+"share": 4}` (the line-selection scoring; assemble ignores it).
 `*word` = Anton claim (gold). `assemble --sets sets.json --set A` writes project_A.json,
 words_A.json (script spelling, ASR times, absolute `src`) and assemble_A.txt into
 `<src folder>/intros/work/` (or `<out_dir>/work/`, or `--out`); black 10 f between beats,
-final black 15 f, end card 81 f, sting_at = end card start + 0.07 s. Then `vet --write`.
+final black 15 f, end card 81 f, sting_at = end card start + 0.07 s. Then `vet --write`
+(`--transcript T.json` adds speaker changes to the cut check; `--no-edit-checks` skips the
+editorial WARNs and the stranger-test script). Before choosing lines: `signals --transcript
+T.json --speaker guest` (read-only shortlist, writes `<transcript>.signals.json`).
 
 ## Stage 4 — base picture
 

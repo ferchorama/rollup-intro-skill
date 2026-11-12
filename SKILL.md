@@ -96,6 +96,13 @@ introkit.py vet --project P.json --words W.json [--write]     # per line candida
 introkit.py qc  --final F.mp4 --project P.framed.json [--words W.json] [--out qc.json]
 ```
 
+- **signals (before selection, read-only):** `introkit.py signals --transcript T.json --speaker
+  guest` ranks about 12 guest lines by energy peaks, pause before, questions, contrast/power
+  words, numbers and length (JSON + table, hook-type hint, flags). A shortlist, not a choice.
+- **vet editorial WARNs + stranger test:** besides the gates below, vet WARNs when a beat starts
+  on a weak opener / bare pronoun / back-reference and when it stops mid-sentence or on a
+  conjunction (column `cut after`), then prints the plain script for the stranger test
+  (`references/line-selection.md`). WARN only; `--no-edit-checks` skips them.
 - **vet (selection time):** stutters / fillers (per-clip ASR with VAD on AND off; this is what
   catches hidden stutters that full-file ASR smooths over), the acoustic end of each last word
   (`--write` sets the out-point there + 60-120 ms tail, 20-25 ms fade, never the raw ASR word
@@ -113,6 +120,10 @@ introkit.py qc  --final F.mp4 --project P.framed.json [--words W.json] [--out qc
   cached results (`qc_cache.json`); a contact sheet (`*_contact.jpg`, face + caption boxes per
   shot) and a waveform (`*_wave.png`) are the only human-review artefacts. LISTEN rows are
   the only things to listen to.
+- **qc SPEAKER row (advisory, never fails):** mouth-region motion of the face inside each shot's
+  crop vs the source speech envelope, and vs other faces in the source frame; `ok`, `ambiguous`
+  (the honest answer on weak evidence) or WARN "possible wrong speaker on screen". Cached per
+  shot (only changed shots re-run); `--no-speaker-check` skips it.
 - Head touching the top is accepted only per shot / speaker via `allow_top_touch` (Kristen).
 - Removed as gates: multi-model ASR voting, full-file ASR, windowed re-transcription, every-
   frame face scan (`--classic-faces` keeps it as a diagnostic), voiceprint (diagnostic only,
@@ -156,13 +167,17 @@ introkit.py qc  --final F.mp4 --project P.framed.json [--words W.json] [--out qc
 4. **Map the hosts** with a voiceprint. If the session has a **single host**, the two host
    beats come from the same person (rule 020), but never back to back: a guest line goes
    between them (strict alternation).
-5. **Select lines** with `references/line-selection.md`: delivery first, then cleanliness,
-   hook compliance, 2-3 alternative sets plus a recommendation.
+5. **Select lines** with `references/line-selection.md`: run `introkit.py signals` for the
+   shortlist, score each hook (strength / curiosity / clarity / shareability + hook type; A/B/C
+   open on three different types), then delivery, cleanliness, hook compliance, 2-3
+   alternative sets plus a recommendation.
 6. **Assemble and vet.** Write the beats into `<source folder>\intros\work\sets.json`
    (see `references/pipeline.md`) and run `introkit.py assemble --sets sets.json --set A` (project + words, script spelling
    wins), then `introkit.py vet --project project_A.json --words words_A.json --write`.
    Fix every vet FAIL (stutter / filler / clipped end / no face) by choosing another span
-   BEFORE framing or rendering anything. LISTEN rows: listen to that one cut.
+   BEFORE framing or rendering anything. LISTEN rows: listen to that one cut. Read every
+   `edit:` WARN (weak opener, ends mid-sentence / on a conjunction) and do the **stranger test**
+   on the printed SCRIPT once per set; re-pick spans that fail it.
 7. **Frame:** `introkit.py frame --project project_A.json` (side layout by default; list
    broadcast furniture as `avoid: [[x,y,w,h],...]`; per-speaker `speakers: {name: {pick,
    text_side, zoom}}` when two people share a camera). Read `<stem>.framed.frame.txt`.
@@ -170,7 +185,8 @@ introkit.py qc  --final F.mp4 --project P.framed.json [--words W.json] [--out qc
    with SAR 1:1 + bt709 tags, the AAC remaster (-14 LUFS, TP <= -1.1) and faststart built in.
    Review with `introkit.py preview`, never ship the preview.
 9. **QC once:** `introkit.py qc --final intros/NAME.mp4 --project project_A.framed.json --out
-   intros/work/qc_A.json`. Ship only on PASS; look at the contact sheet; listen to LISTEN rows.
+   intros/work/qc_A.json`. Ship only on PASS; look at the contact sheet; listen to LISTEN rows;
+   look at any SPEAKER WARN shot (advisory: it never blocks a PASS).
    After a fix, re-run `qc`: only the shots whose inputs changed are re-checked.
 
 ## Motion and type contract
@@ -237,4 +253,4 @@ that was used). Never move or overwrite earlier deliverables; a revision is a ne
 - `references/qc.md` — every gate and how to measure it
 - `LESSONS_LEARNED.md` — session lessons, kit TODOs, SAR and audio workarounds; read before cutting
 - `references/troubleshooting.md` — failures already paid for; read before debugging
-- `scripts/introkit.py` — entry point (`sidekit.py` side planner / vet / qc, `transcribe.py`, `speakers.py` alongside); `CHANGELOG.md` — what changed
+- `scripts/introkit.py` — entry point (`sidekit.py` side planner / vet / qc, `editcheck.py` openers / cut boundary / stranger script / `signals` / qc speaker row, `transcribe.py`, `speakers.py` alongside); `CHANGELOG.md` — what changed

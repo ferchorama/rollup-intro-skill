@@ -9,7 +9,9 @@ Imported lazily by introkit.py (`_lib("sidekit")`); keep top-level imports stdli
                and off), acoustic end of the last word (+ --write: the out-point fix), dip grade
                of every cut vs the room floor, headroom feasibility
     qc         four decisive post-build gates in one run: FORMAT, AUDIO, FRAMING, SPEECH; one
-               PASS/FAIL table with shot / time / fix hint; per-shot cache; contact sheet
+               PASS/FAIL table with shot / time / fix hint; per-shot cache; contact sheet; plus the
+               advisory SPEAKER row (editcheck.speaker_gate: WARN only, never a FAIL)
+    (editorial WARNs in vet, the stranger-test script and `signals` live in editcheck.py)
 """
 from __future__ import annotations
 
@@ -706,22 +708,62 @@ def cmd_vet(a) -> None:
         if r["headroom"].startswith("TIGHT") and ik.allow_top_touch(proj, s):
             r = dict(r, headroom="OK (allow_top_touch)")
         rows.append((s, r))
+    # editorial WARNs (editcheck): how each beat starts, what follows each out-word. Advisory only:
+    # they never move an in/out point and never turn the verdict into FAIL.
+    edit = {}
+    if not getattr(a, "no_edit_checks", False):
+        ec = __import__("editcheck")
+        trw, trid = None, None
+        if getattr(a, "transcript", None):
+            tr = __import__("transcribe").read_transcript(Path(a.transcript))
+            trw = [{"start": float(w["start"]), "end": float(w["end"]), "speaker": w.get("speaker") or c.get("speaker")}
+                   for c in tr.get("cues", []) for w in c.get("words", [])]
+            trid = src_id(a.transcript)
+        for s, r in rows:
+            k = shots.index(s)
+            nxt = shots[k + 1] if k + 1 < len(shots) and shots[k + 1]["kind"] == "clip" else None
+            words = [w["w"] for w in WD[str(s["i"])]]
+            cont = ec.beat_key(s)[1] not in ("", "a")
+            op = [] if cont or not words else ec.opener_flags(words)
+            if nxt is not None and is_join(shots, k):
+                bd = {"kind": "JOIN", "flags": []}
+            elif nxt is not None and ec.beat_key(nxt)[0] == ec.beat_key(s)[0]:
+                bd = {"kind": "SPLIT", "flags": []}      # internal splice inside one beat: judged by ear
+            elif not words:
+                bd = {"kind": "-", "flags": []}
+            else:
+                bkey = sha("bnd-v1", src_id(src), s["src_in"], float(s["audio_out"]), words[-1], trid)
+                bd = cache.get(bkey)
+                if bd is None:
+                    if model is None:
+                        model = whisper(a, proj)
+                    bd = ec.boundary_after(sys.modules[__name__], ff, src, model, float(s["audio_out"]), words[-1], trw)
+                    cache[bkey] = bd
+            edit[s["i"]] = (op, bd)
     _save_json(cpath, cache)
-    print(f"{'shot':>4} {'beat':<22} {'verdict':7} {'stutter/filler':<28} {'in':5} {'out old>new (ms)':>18} {'end':6} {'dip':5} {'head':5}")
+    print(f"{'shot':>4} {'beat':<22} {'verdict':7} {'stutter/filler':<28} {'in':5} {'out old>new (ms)':>18} {'end':6} {'dip':5} {'head':5} {'cut after':14}")
     bad = False
     for s, r in rows:
         e = r["end"]
         eg = "JOIN" if e["out_grade"] == "JOIN" else end_grade(e["out_old"], e["acoustic_end"], e["asr_end"])
+        op, bd = edit.get(s["i"], ([], {"kind": "-", "flags": []}))
+        eflags = op + bd.get("flags", [])
         verdict = "FAIL" if r["issues"] or eg == "FAIL" or r["headroom"] == "NO FACE" else \
-            ("WARN" if eg == "LISTEN" or "HOT" in (r["in_grade"], e["out_grade"]) or r["headroom"].startswith("TIGHT") else "OK")
+            ("WARN" if eg == "LISTEN" or "HOT" in (r["in_grade"], e["out_grade"]) or r["headroom"].startswith("TIGHT")
+             or eflags else "OK")
         bad |= verdict == "FAIL"
+        cut = bd["kind"] + (f" {bd['score']:.2f}" if bd.get("score") is not None else "")
         print(f"{s['i']:>4} {s.get('beat', ''):<22} {verdict:7} {('; '.join(r['issues']) or '-')[:28]:<28} {r['in_grade']:5}"
-              f" {e['out_old']:.2f}>{e['out_new']:.2f} ({e['ext_ms']:+d}) {eg:6} {e['out_grade']:5} {r['headroom'][:5]}")
+              f" {e['out_old']:.2f}>{e['out_new']:.2f} ({e['ext_ms']:+d}) {eg:6} {e['out_grade']:5} {r['headroom'][:5]} {cut:14}")
+        for f in eflags:
+            print(f"       edit: {f}")
         if r["issues"]:
             print(f"       ASR vad on : {r['asr_vad_on']}\n       ASR vad off: {r['asr_vad_off']}\n"
                   "       fix: move the in/out into the dip around the repeat/filler, or pick another span")
         if r["in_grade"] == "HOT":
             print(f"       note: in-point {r['in_level_db']} dB vs floor {r['floor']} (sound right before the in; fine if the fade-in hides it)")
+    if edit:
+        __import__("editcheck").print_stranger(proj, WD)
     if a.write:
         for f in (pp, wp):
             b = f.with_name(f.stem + ".pre_vet" + f.suffix)
@@ -1188,6 +1230,9 @@ def cmd_qc(a) -> None:
             t = time.time(); G["speech"] = speech_gate(a, ff, final, proj, words, cache, use, wave); T["speech"] = time.time() - t
         else:
             G["speech"] = {"pass": False, "fails": [{"where": "-", "detail": "no words json", "fix": "pass --words"}], "summary": "skipped"}
+        if not getattr(a, "no_speaker_check", False):     # advisory row: never fails the qc
+            t = time.time(); G["speaker"] = __import__("editcheck").speaker_gate(ff, ffprobe, proj, cache, use)
+            T["speaker"] = time.time() - t
     if proj:
         _save_json(cpath, cache)
     ok = all(g["pass"] for g in G.values())

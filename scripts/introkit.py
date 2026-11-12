@@ -7,19 +7,22 @@ Stages (all re-runnable, OS-agnostic: Windows, macOS Intel/Apple Silicon, Linux)
     transcribe  word-timestamped ASR (faster-whisper; CUDA if present, else CPU int8)
     words       cut per-shot word timings out of a word-level transcript
     assemble    sets.json (beats -> pieces in/out + script text) -> project + words (script spelling wins)
-    vet         selection-time checks (cached): stutters, last-word acoustic end (--write fixes outs), dips, headroom
+    signals     read-only hook shortlist: one speaker's lines ranked by energy, pause, question, power words, numbers
+    vet         selection-time checks (cached): stutters, last-word acoustic end (--write fixes outs), dips, headroom,
+                editorial WARNs (weak opener, cut boundary) + the plain script for the stranger test
     frame       face-safe zoom; --layout side (default): one speaker, face on a third, text opposite
     build       picture -> graphics -> audio -> mux (SAR 1:1, bt709, AAC remaster, faststart)
     preview     small H.264 review copy (NVENC / VideoToolbox if present, else libx264)
-    qc          four decisive gates in one run (format, audio, framing, speech) + contact sheet
+    qc          four decisive gates in one run (format, audio, framing, speech) + contact sheet, plus an
+                advisory right-speaker row (mouth motion vs speech; WARN only)
 
 Hardware: --device auto|cuda|qsv|d3d11va|dxva2|vaapi|videotoolbox|cpu (default auto; also
 project key "device" or env INTROKIT_DEVICE; --hwaccel pins decode only). Each tier is
 self-tested (1 s decode + encode) and falls back to CPU. Previews use nvenc / qsv / amf /
 videotoolbox / libx264; the deliverable is ALWAYS libx264 CRF 15 preset medium.
 Subcommands: hw, env, fetch-model, probe, transcribe [--diarize], diarize, voiceprint,
-assemble, words, vet, frame, build, preview, qc. Transcription = scripts/transcribe.py (Whisper large-v3-turbo);
-speakers = scripts/speakers.py (ONNX WeSpeaker embeddings, no token).
+signals, assemble, words, vet, frame, build, preview, qc. Transcription = scripts/transcribe.py (Whisper large-v3-turbo);
+speakers = scripts/speakers.py (ONNX WeSpeaker embeddings, no token); editorial checks = scripts/editcheck.py.
 
 Config lives in a project JSON (see project.example.json). No path is hardcoded;
 ffmpeg/ffprobe are found on PATH or passed explicitly; fonts are found in the project's
@@ -2564,6 +2567,8 @@ def main(argv=None):
     q.add_argument("--no-cache", action="store_true", help="re-run every shot (default: unchanged shots reuse results)")
     q.add_argument("--classic-faces", action="store_true", help="diagnostic: also the old every-frame face gate")
     q.add_argument("--faces", action="store_true", help=argparse.SUPPRESS)       # old flag: gates are automatic now
+    q.add_argument("--no-speaker-check", dest="no_speaker_check", action="store_true",
+                   help="skip the advisory right-speaker row (mouth motion vs speech; WARN only, cached per shot)")
     q.set_defaults(func=cmd_qc)
 
     sk = _lib("sidekit")
@@ -2583,7 +2588,28 @@ def main(argv=None):
     vt.add_argument("--fade-ms", dest="fade_ms", type=int, default=25, help="speech fade-out, ms (20-30)")
     vt.add_argument("--allow-shorten", action="store_true", help="also pull outs earlier (default: only extend)")
     vt.add_argument("--no-cache", action="store_true")
+    vt.add_argument("--transcript", default=None, help="speaker-labelled transcript JSON: lets the cut check see a "
+                                                       "speaker change after the out-word (optional)")
+    vt.add_argument("--no-edit-checks", dest="no_edit_checks", action="store_true",
+                    help="skip the editorial WARNs (opener, cut boundary) and the stranger-test script")
     vt.set_defaults(func=sk.cmd_vet)
+
+    ec = _lib("editcheck")
+    sg = dev(sub.add_parser("signals", help="read-only hook shortlist: rank one speaker's lines by energy peaks, pause "
+                                             "before, questions, contrast/power words, numbers, length"))
+    sg.add_argument("--transcript", required=True, help="transcript JSON from `transcribe` (word times; speakers if "
+                                                        "diarized) or an .srt (approximate)")
+    sg.add_argument("--src", default=None, help="source video/audio (default: transcript meta.source)")
+    sg.add_argument("--speaker", default="guest", help="speaker label(s) to keep, comma-separated (default guest)")
+    sg.add_argument("--enroll", action="append", default=None,
+                    help="NAME=START:DUR voice references when the transcript has no speaker labels (as in diarize)")
+    sg.add_argument("--top", type=int, default=12)
+    sg.add_argument("--min-dur", dest="min_dur", type=float, default=3.0)
+    sg.add_argument("--max-dur", dest="max_dur", type=float, default=10.0)
+    sg.add_argument("--start", type=float, default=None, help="only words after this time (s)")
+    sg.add_argument("--end", type=float, default=None, help="only words before this time (s)")
+    sg.add_argument("--out", default=None, help="JSON path (default <transcript stem>.signals.json)")
+    sg.set_defaults(func=ec.cmd_signals)
 
     a = ap.parse_args(argv)
     a.func(a)

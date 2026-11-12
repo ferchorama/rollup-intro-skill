@@ -1,5 +1,22 @@
 # Changelog
 
+## 2026-11-12 (editorial checks: openers, cut boundary, stranger test, signals, speaker row)
+All new code is ours (`scripts/editcheck.py`); ideas and thresholds were informed by a review of
+SupoClip (AGPL-3.0), but no code or prompt text was copied. No new dependencies, no accounts.
+- **vet:** editorial WARNs per beat: weak opener / bare pronoun / back-reference on the first
+  piece; boundary after the last word (speaker change 0.9 / sentence end 0.75-0.95 / pause 0.55 /
+  breath 0.4 / mid-clause 0.1, new column `cut after`) with a WARN on mid-sentence ends and
+  conjunction / function-word ends. Cached in vet_cache.json; never moves an out-point; never a
+  FAIL. New flags `--transcript` (speaker change) and `--no-edit-checks`. vet now ends with the
+  plain SCRIPT for the stranger test.
+- **signals (new, read-only):** `introkit.py signals --transcript T.json --speaker guest` ranks ~12
+  guest lines (energy, pause before, question, power/contrast words, numbers, length; hook-type
+  hint; flags). Speakers from transcript labels or `--enroll` voiceprints.
+- **qc:** advisory SPEAKER row (mouth motion vs speech, vs other faces in the source): ok /
+  ambiguous / WARN, never a FAIL; cached per shot; `--no-speaker-check`.
+- **Docs:** line-selection.md (signals, openers, stop rules, scoring checklist with hook types,
+  stranger test), SKILL.md workflow, qc.md, pipeline.md, LESSONS_LEARNED F1-F3.
+
 ## 2026-11-03 (session 2: strict speaker alternation; later last-word ends)
 - **Strict alternation (user rule):** no two consecutive beats by the same speaker; with one host
   + guest it is guest / host / guest / host / guest. `assemble` now refuses a set that breaks it.

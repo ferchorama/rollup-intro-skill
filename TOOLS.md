@@ -262,6 +262,8 @@ New in 2026-11-02: `assemble` (sets.json -> project + words), `vet` (selection-t
 `--write` fixes outs), `frame --layout side` (default), consolidated `qc` (4 gates, cache,
 contact sheet). `scripts/sidekit.py` holds them; it needs no extra packages (opencv, numpy,
 pillow, faster-whisper are already in the env).
+New in 2026-11-12: `signals` (read-only hook shortlist), editorial WARNs + stranger-test script in
+`vet`, advisory SPEAKER row in `qc`; all in `scripts/editcheck.py`, same env, no new packages.
 
 
 | Stage | Tools |

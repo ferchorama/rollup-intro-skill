@@ -14,6 +14,16 @@ python scripts/introkit.py qc  --final out/NAME.mp4 --project P.framed.json --ou
 | FRAMING | YuNet, every 3rd frame + first/last of each shot, 960x540 | head+25 % < 0 (unless allow_top_touch), chin < 5 % h, side < 5 % w, != 1 face, caption over face, caption in 60 px strip | crop / zoom / maxw / matte |
 | SPEECH | one ASR per shot on the final mix + source envelope | filler or stutter, out > 150 ms before the acoustic end, pause > 0.35 s | vet --write / another span |
 
+| SPEAKER (advisory) | source frames of each shot at 960 px, YuNet landmarks, mouth-patch motion minus eye-patch (head) motion, correlated with the source speech envelope (+-3 frame lag) | never | look at the shot |
+
+SPEAKER verdicts: `ok` when the visible face's mouth follows the speech (r >= 0.20); WARN
+"possible wrong speaker on screen" when an off-crop face in the source follows it clearly
+better (r >= 0.30 and >= 0.20 above the visible face) or the visible mouth clearly does not
+(r < -0.15 and speech/quiet motion < 0.7); otherwise `ambiguous` (it does not guess).
+Thresholds: `editcheck.MOUTH`. Cached per shot in `qc_cache.json` (raw stats; verdicts are
+recomputed, so threshold changes need no re-scan). Kash Razzaghi A2 (correct speakers): 3 ok,
+4 ambiguous, 0 warn.
+
 WARN rows do not fail: `LISTEN` (out within -150..+40 ms of the acoustic end: listen to that
 cut), tail pause > 0.35 s. Results are cached per shot in `qc_cache.json`; `--no-cache` re-runs
 all. The contact sheet (`<out>_contact.jpg`) and waveform (`<out>_wave.png`) are the human
