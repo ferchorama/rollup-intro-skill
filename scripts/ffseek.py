@@ -1,8 +1,9 @@
 """Accurate FFmpeg seek, probe and delivery-metrics helpers for the Rollup intro kit.
 
 Cuts use an accurate seek: input-seek one second early, then drop that margin
-on the output side so video and audio start at the requested time, and bound
-the audio length with atrim at sample resolution.
+so video and audio start at the requested time. Picture uses output -ss plus -t.
+Audio extracts bound the length with atrim on the preroll timeline
+(atrim=start=m:end=m+D), not atrim=end=D after output -ss (that kept only D-m).
 
 Why this exists: on B-frame MP4/MOV, an input -ss can land on a keyframe *after*
 the requested time and drop the leading frames (and, on a video file, an input
@@ -102,8 +103,16 @@ def extract_pcm(ff: str, path, start: float | None = None, end: float | None = N
                 sr: int = 16000, channels: int = 1, raw: str | None = None):
     """Decode a float32 PCM span (mono or interleaved stereo) from path.
 
-    Uses the 1 s preroll + output -ss recipe and atrim so the returned samples
-    start at *start* and last *end-start* (sample-accurate).
+    Input-seek one second early (same preroll as video_seek_args), then trim
+    with atrim on that preroll timeline so the returned samples start at
+    *start* and last *end-start* (sample-accurate):
+
+        -ss (T-m) -i SRC -t (m+D) -af atrim=start=m:end=m+D,asetpts=PTS-STARTPTS
+
+    Do not pair output -ss m with atrim=end=D: after output -ss, PTS still
+    start at m, so atrim=end=D keeps only D-m seconds and drops the out-point.
+    Video seeks (build picture, frame scans) stay on video_seek_args and -t;
+    they do not use atrim and are already duration-correct.
     raw= is a headerless PCM format string (introkit SFX); those skip seeking.
     """
     import numpy as np
@@ -120,11 +129,17 @@ def extract_pcm(ff: str, path, start: float | None = None, end: float | None = N
         cmd += ["-i", str(path)]
     else:
         t0 = 0.0 if start is None else max(0.0, float(start))
+        m = min(SEEK_MARGIN, t0)
         dur = None if end is None else max(0.01, float(end) - t0)
-        before, after = video_seek_args(t0, dur)
-        cmd += before + ["-i", str(path)] + after
+        cmd += ["-ss", f"{t0 - m:.6f}", "-i", str(path)]
+        af_parts = []
         if dur is not None:
-            cmd += ["-af", f"atrim=end={dur:.6f},asetpts=PTS-STARTPTS"]
+            cmd += ["-t", f"{m + dur:.6f}"]
+            af_parts.append(f"atrim=start={m:.6f}:end={m + dur:.6f}")
+        elif m > 0:
+            af_parts.append(f"atrim=start={m:.6f}")
+        if af_parts:
+            cmd += ["-af", ",".join(af_parts + ["asetpts=PTS-STARTPTS"])]
     cmd += ["-vn", "-ac", str(channels), "-ar", str(sr), "-f", "f32le", "pipe:1"]
     p = subprocess.run(cmd, capture_output=True)
     if p.returncode:

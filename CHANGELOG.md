@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-11-13 (fix extract_pcm atrim after preroll)
+- **Bug:** \fseek.extract_pcm\ used the picture recipe (\-ss (T-1) -i SRC -ss 1 -t D\) plus \trim=end=D\. After output \-ss\, PTS still start at the 1 s preroll, so \trim=end=D\ kept only \D-1\ seconds and dropped the out-point. \et\ / \qc\ / \metrics\ energy (head_leak_db, post_out_db, end_margin) and windowed \	ranscribe\ reads were short; \stage_audio\ also used \extract_pcm\, so built dialogue was missing the last ~1 s of every shot (padded with silence under the music bed).
+- **Fix:** audio extracts now input-seek the preroll, then \trim=start=m:end=m+D,asetpts=PTS-STARTPTS\ (no output \-ss\). Windows are exactly D long. Picture seeks (\stage_base\, \rame\ scans) were already duration-correct (no atrim) and are unchanged.
+- Eric A/B/C built before this fix need a rebuild for the dialogue; Kash / Quinn baselines were not rebuilt.
+
 ## 2026-11-13 (FFmpeg accurate seeks + delivery metrics, used by the pipeline)
 Informed by a review of [kajisho5/ffmpeg-skill](https://github.com/kajisho5/ffmpeg-skill)
 v3.8.4 (MIT License, Copyright (c) 2026 kajisho5). We did not vendor its 42 scripts; the

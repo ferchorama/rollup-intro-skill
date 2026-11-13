@@ -67,7 +67,7 @@ build, 7.1.5 Debian).
 | Silence / word tails | `-af "silencedetect=noise=-45dB:d=0.25"` |
 | Channel identity | `-af astats=metadata=0:measure_perchannel=Peak_level+RMS_level:measure_overall=none` |
 | Frame-accurate still | `-i FILE -ss T -frames:v 1` (ss **after** -i) |
-| Word-accurate extract | `-ss (T-1) -i SRC -ss 1 -t D` plus audio `-af atrim=end=D,asetpts=PTS-STARTPTS` (`scripts/ffseek.py`) |
+| Word-accurate extract | audio: `-ss (T-1) -i SRC -t (1+D) -af atrim=start=1:end=1+D,asetpts=PTS-STARTPTS`; picture: `-ss (T-1) -i SRC -ss 1 -t D` (`scripts/ffseek.py`) |
 | Delivery (introkit does this) | `-c:v libx264 -preset medium -crf 15 -profile:v high -pix_fmt yuv420p -r 30 -g 60 -movflags +faststart -threads 0 -c:a aac -b:a 320k -ar 48000 -ac 2` |
 
 **Traps**: `-ss` before `-i` alone is a fast seek and can land late on B-frame MP4. `build` / `vet` / `qc` / windowed `transcribe` use the accurate preroll recipe (`references/ffmpeg.md`).

@@ -33,9 +33,18 @@ seek — render only, never verify with it"; the render itself was still doing i
 ffmpeg -ss (T-1) -i SRC -ss 1 -t D ...
 ```
 
-plus, on audio extracts, `-af atrim=end=D,asetpts=PTS-STARTPTS` so the length
-is sample-accurate. The 1 s preroll is `ffseek.SEEK_MARGIN`. Video and audio
-share the same recipe so a shot's picture and sound start together.
+plus, on audio extracts, do **not** pair output `-ss 1` with `atrim=end=D`. After
+output `-ss`, PTS still start at the preroll, so `atrim=end=D` keeps only `D-1`
+seconds and drops the out-point (and, through `stage_audio`, the last second of
+built dialogue). The sample-accurate recipe is input-seek only, then atrim on
+that preroll timeline:
+
+```
+ffmpeg -ss (T-1) -i SRC -t (1+D) -af atrim=start=1:end=1+D,asetpts=PTS-STARTPTS
+```
+
+Picture (`stage_base`, `frame` scans) still uses `-ss (T-1) -i SRC -ss 1 -t D`
+with no atrim and is duration-correct. The 1 s preroll is `ffseek.SEEK_MARGIN`.
 
 `build`, `frame` (face scan), `vet`, `qc` (word-edge energy) and windowed
 `transcribe` all go through `scripts/ffseek.py`. A full-file transcribe has no
@@ -92,10 +101,10 @@ Prefer going through `introkit.py` / `ffseek.py`. If you must type a command:
 **Word-accurate extract (audio):**
 
 ```
-ffmpeg -ss 940.98 -i SRC -ss 1 -t 2.5 -af "atrim=end=2.5,asetpts=PTS-STARTPTS" -ac 1 -ar 16000 -f f32le out.f32
+ffmpeg -ss 940.98 -i SRC -t 3.5 -af "atrim=start=1:end=3.5,asetpts=PTS-STARTPTS" -ac 1 -ar 16000 -f f32le out.f32
 ```
 
-(The first `-ss` is 1 s before the in-point 941.98.)
+(The first `-ss` is 1 s before the in-point 941.98. `atrim` is on that preroll timeline, so the kept window is exactly 2.5 s starting at 941.98.)
 
 **Frame-accurate still** (already in TOOLS.md): `-i FILE -ss T -frames:v 1` (`-ss` after `-i`).
 
