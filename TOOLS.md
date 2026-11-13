@@ -67,9 +67,10 @@ build, 7.1.5 Debian).
 | Silence / word tails | `-af "silencedetect=noise=-45dB:d=0.25"` |
 | Channel identity | `-af astats=metadata=0:measure_perchannel=Peak_level+RMS_level:measure_overall=none` |
 | Frame-accurate still | `-i FILE -ss T -frames:v 1` (ss **after** -i) |
+| Word-accurate extract | `-ss (T-1) -i SRC -ss 1 -t D` plus audio `-af atrim=end=D,asetpts=PTS-STARTPTS` (`scripts/ffseek.py`) |
 | Delivery (introkit does this) | `-c:v libx264 -preset medium -crf 15 -profile:v high -pix_fmt yuv420p -r 30 -g 60 -movflags +faststart -threads 0 -c:a aac -b:a 320k -ar 48000 -ac 2` |
 
-**Traps**: `-ss` before `-i` is a fast seek â€” render only, never verify with it.
+**Traps**: `-ss` before `-i` alone is a fast seek and can land late on B-frame MP4. `build` / `vet` / `qc` / windowed `transcribe` use the accurate preroll recipe (`references/ffmpeg.md`).
 `-frames:v N` is the only reliable frame-exact segment length; verify with `-count_frames`.
 `overlay` needs `format=auto` when the base is yuv420p and the overlay RGBA.
 
@@ -264,11 +265,12 @@ contact sheet). `scripts/sidekit.py` holds them; it needs no extra packages (ope
 pillow, faster-whisper are already in the env).
 New in 2026-11-12: `signals` (read-only hook shortlist), editorial WARNs + stranger-test script in
 `vet`, advisory SPEAKER row in `qc`; all in `scripts/editcheck.py`, same env, no new packages.
+New in 2026-11-13: accurate FFmpeg seeks (`scripts/ffseek.py`), richer `probe`, `introkit.py metrics` for Kash/Quinn vs Eric compares. See `references/ffmpeg.md`.
 
 
 | Stage | Tools |
 |---|---|
-| probe / teardown | ffprobe, ffmpeg (astats, blackdetect, ebur128) |
+| probe / teardown | ffprobe, ffmpeg (astats, blackdetect, ebur128); `introkit.py probe` also reports VFR, SAR, start_time, A/V skew |
 | transcript | `introkit.py transcribe` (Whisper large-v3-turbo) |
 | identity / hosts | `introkit.py voiceprint`, `diarize` |
 | framing | `introkit.py frame` (ffmpeg decode on the hwaccel tier â†’ YuNet on CPU), full-frame review |
@@ -277,6 +279,7 @@ New in 2026-11-12: `signals` (read-only hook shortlist), editorial WARNs + stran
 | audio | numpy, bundled music/SFX, ffmpeg ebur128 |
 | mux / deliverable | ffmpeg libx264 CRF 15 + AAC |
 | QC | ffmpeg ebur128, `introkit.py qc --faces` (YuNet), `transcribe` on the deliverable, numpy |
+| metrics | `introkit.py metrics --final F --project P --words W` (cut-edge energy, loudness, size, A/V skew; optional `--asr`) |
 
 ## Hype music beds (added 2026-11-04)
 - assets/music/rollup_hype_bed_140bpm_1.mp3 and rollup_hype_bed_140bpm_2.mp3: ~30 s, 140 BPM hype instrumentals. Source: ElevenLabs Music v2, generated 2026-11-04. Point a project's `music` key at one to use it; the default is still rollup_music_bed_32s.mp3. bed_2 has denser onsets from the start (no slow build). Both are loud in the first seconds, so check the shot-1 speech/music gap (aim for >= 5 dB) and add a per-shot `duck`/`gain_db` if needed.

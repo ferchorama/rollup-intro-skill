@@ -154,6 +154,8 @@ introkit.py qc  --final F.mp4 --project P.framed.json [--words W.json] [--out qc
   same person. With one host + the guest: guest / host / guest / host / guest (e.g. hook > host Q >
   guest answer > host Q > button, or simply hook > host > button). With two hosts, host > host is
   allowed only when they are different people. `assemble` refuses a set that breaks this.
+- **Intros always open with the guest, never with a host (user rule, 2026-11-13).** Beat 1
+  is the guest hook. `assemble` WARNs if the first beat is not the guest.
 
 ## Procedure
 
@@ -253,4 +255,5 @@ that was used). Never move or overwrite earlier deliverables; a revision is a ne
 - `references/qc.md` — every gate and how to measure it
 - `LESSONS_LEARNED.md` — session lessons, kit TODOs, SAR and audio workarounds; read before cutting
 - `references/troubleshooting.md` — failures already paid for; read before debugging
-- `scripts/introkit.py` — entry point (`sidekit.py` side planner / vet / qc, `editcheck.py` openers / cut boundary / stranger script / `signals` / qc speaker row, `transcribe.py`, `speakers.py` alongside); `CHANGELOG.md` — what changed
+- `references/ffmpeg.md` — FFmpeg recipes now used by the kit (accurate seek, probe, loudness, before/after metrics vs Kash/Quinn); informed by kajisho5/ffmpeg-skill (MIT)
+- `scripts/introkit.py` — entry point (`sidekit.py` side planner / vet / qc, `editcheck.py` openers / cut boundary / stranger script / `signals` / qc speaker row, `transcribe.py`, `speakers.py`, `ffseek.py` alongside); `CHANGELOG.md` — what changed

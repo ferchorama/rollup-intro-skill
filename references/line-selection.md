@@ -67,6 +67,9 @@ Hosts appear in beats 2 and 4: never save a host for the last third.
 host the order is guest / host / guest / host / guest; a 4-beat hook > host > host > button is
 NOT allowed (put a guest line between the host beats, or drop to hook > host > button).
 
+**Open with the guest (user rule, 2026-11-13):** intros always open with the guest, never
+with a host. Beat 1 is the guest hook. `assemble` WARNs if the first beat is not the guest.
+
 ## What makes a hook
 
 - a **claim** the guest is willing to defend in one breath ("X is not enough to do Y")

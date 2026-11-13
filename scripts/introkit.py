@@ -15,13 +15,14 @@ Stages (all re-runnable, OS-agnostic: Windows, macOS Intel/Apple Silicon, Linux)
     preview     small H.264 review copy (NVENC / VideoToolbox if present, else libx264)
     qc          four decisive gates in one run (format, audio, framing, speech) + contact sheet, plus an
                 advisory right-speaker row (mouth motion vs speech; WARN only)
+    metrics     delivery metrics for before/after compares (loudness, size, A/V skew, per-shot cut edges)
 
 Hardware: --device auto|cuda|qsv|d3d11va|dxva2|vaapi|videotoolbox|cpu (default auto; also
 project key "device" or env INTROKIT_DEVICE; --hwaccel pins decode only). Each tier is
 self-tested (1 s decode + encode) and falls back to CPU. Previews use nvenc / qsv / amf /
 videotoolbox / libx264; the deliverable is ALWAYS libx264 CRF 15 preset medium.
 Subcommands: hw, env, fetch-model, probe, transcribe [--diarize], diarize, voiceprint,
-signals, assemble, words, vet, frame, build, preview, qc. Transcription = scripts/transcribe.py (Whisper large-v3-turbo);
+signals, assemble, words, vet, frame, build, preview, qc, metrics. Transcription = scripts/transcribe.py (Whisper large-v3-turbo);
 speakers = scripts/speakers.py (ONNX WeSpeaker embeddings, no token); editorial checks = scripts/editcheck.py.
 
 Config lives in a project JSON (see project.example.json). No path is hardcoded;
@@ -40,6 +41,8 @@ import sys
 import platform
 import tempfile
 from pathlib import Path
+
+import ffseek
 
 # --------------------------------------------------------------------------- shell
 
@@ -558,15 +561,11 @@ def cmd_probe(a) -> None:
         if path is None:
             continue
         info = ffprobe_json(ffprobe, path)
-        v = next(s for s in info["streams"] if s.get("width"))
-        au = next((s for s in info["streams"] if s.get("sample_rate")), None)
-        d = dict(duration=round(float(info["format"]["duration"]), 3),
-                 width=v["width"], height=v["height"],
-                 fps=v.get("r_frame_rate"), codec=v.get("codec_name"),
-                 audio=None)
+        d = ffseek.enrich(info)
+        if d.get("duration") is not None:
+            d["duration"] = round(d["duration"], 3)
+        au = (d.get("audio") or None)
         if au:
-            d["audio"] = dict(codec=au.get("codec_name"), rate=au.get("sample_rate"),
-                              channels=au.get("channels"), bitrate=au.get("bit_rate"))
             # dual-mono test: identical channels means one programme bus
             p = run([ffmpeg, "-hide_banner", "-nostats", "-t", "60", "-i", str(path),
                      "-filter_complex",
@@ -719,9 +718,9 @@ def stage_base(proj, ff, ffprobe, work: Path) -> Path:
                           f"(run `frame` for a face-anchored push)", flush=True)
                     vf += (f",zoompan=z='1+{shot['punch']}*on/{n}'"
                            f":x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=1:s={W}x{H}:fps={fps},setsar=1")
+            before, after = ffseek.video_seek_args(shot["src_in"], n / fps + 0.5)
             run_decode([ff, "-y", "-hide_banner", "-loglevel", "error"],
-                ["-ss", f"{shot['src_in']:.4f}", "-i", proj["src"],
-                 "-t", f"{n / fps + 0.5:.4f}", "-vf", vf, "-frames:v", str(n),
+                [*before, "-i", proj["src"], *after, "-vf", vf, "-frames:v", str(n),
                  "-r", str(fps), "-an", "-c:v", "libx264", "-threads", "0", "-crf", "15",
                  "-preset", "medium", "-pix_fmt", "yuv420p", *BT709,
                  "-video_track_timescale", "30000", str(dst)], proj.get("_hw"))
@@ -1088,17 +1087,12 @@ def stage_audio(proj, ff, work: Path) -> Path:
     adir.mkdir(parents=True, exist_ok=True)
 
     def dec(path, ss=None, dur=None, raw=None):
-        cmd = [ff, "-hide_banner", "-loglevel", "error", "-y"]
-        if ss is not None:
-            cmd += ["-ss", f"{ss:.4f}"]
-        if raw:
-            cmd += ["-f", raw, "-ar", "44100", "-ac", "2"]
-        cmd += ["-i", str(path)]
+        t0 = None if ss is None else float(ss)
+        t1 = None
         if dur is not None:
-            cmd += ["-t", f"{dur:.4f}"]
-        cmd += ["-ac", "2", "-ar", str(SR), "-f", "f32le", "pipe:1"]
-        p = run(cmd, binary=True)
-        return np.frombuffer(p.stdout, dtype=np.float32).reshape(-1, 2).copy()
+            t1 = (0.0 if t0 is None else t0) + float(dur)
+            t0 = 0.0 if t0 is None else t0
+        return ffseek.extract_pcm(ff, path, start=t0, end=t1, sr=SR, channels=2, raw=raw)
 
     def fade(x, ms=8):
         n = int(SR * ms / 1000)
@@ -1383,12 +1377,28 @@ def cmd_build(a) -> None:
     words = json.loads((Path(a.words)).read_text(encoding="utf-8")) if a.words \
         else json.loads((work / "words.json").read_text(encoding="utf-8"))
 
+    import time as _time
+    t_build = _time.time()
     print("[introkit] base picture");  stage_base(proj, ff, ffprobe, work)
     print("[introkit] graphics");      ovl = stage_overlay(proj, work, words)
     print("[introkit] audio");         aud = stage_audio(proj, ff, work)
     print("[introkit] mux");           final = stage_mux(proj, ff, work, ovl, aud,
                                                          out_dir / f"{proj['name']}.mp4")
+    elapsed = _time.time() - t_build
     print("[introkit] done ->", final)
+    try:
+        met = ffseek.file_metrics(ff, ffprobe, final)
+        met["seek_mode"] = "accurate"
+        met["build_elapsed_s"] = round(elapsed, 2)
+        met["name"] = proj.get("name")
+        (work / "build_metrics.json").write_text(json.dumps(met, indent=2), encoding="utf-8")
+        L = met["loudness"]
+        mb = (met.get("size_bytes") or 0) / 1e6
+        print(f"[introkit] metrics {met.get('duration') or 0:.2f}s {mb:.2f} MB  "
+              f"{L['I']:.2f} LUFS TP {L['TP']:.2f}  seek={met['seek_mode']}  {elapsed:.1f}s",
+              flush=True)
+    except Exception as exc:  # noqa: BLE001 — a metrics miss must not fail a good render
+        print(f"[introkit] WARN could not write build_metrics.json: {exc}", flush=True)
     if not a.keep_overlay:
         shutil.rmtree(ovl, ignore_errors=True)
 
@@ -1438,17 +1448,14 @@ def _yunet(size: tuple[int, int], score: float):
 
 def _frames(ff: str, src: str, t0: float, dur: float | None, wh: tuple[int, int], plan: dict | None):
     """Yield BGR frames (numpy HxWx3) decoded by ffmpeg with the planned hardware decode
-    (-ss before -i, the same seek the build uses); falls back to CPU if the hw path fails."""
+    (same seek the build uses: accurate preroll by default); falls back to CPU if the hw path fails."""
     import numpy as np
     W, H = wh
     size = W * H * 3
+    before, after = ffseek.video_seek_args(max(0.0, t0 or 0.0), dur)
     for hx in ([hwaccel_args(plan)] if hwaccel_args(plan) else []) + [[]]:
         cmd = [ff, "-hide_banner", "-loglevel", "error", "-nostdin", *hx]
-        if t0:
-            cmd += ["-ss", f"{max(0.0, t0):.4f}"]
-        cmd += ["-i", str(src)]
-        if dur:
-            cmd += ["-t", f"{dur:.4f}"]
+        cmd += before + ["-i", str(src)] + after
         cmd += ["-an", "-f", "rawvideo", "-pix_fmt", "bgr24", "-"]
         p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=size * 2)
         got = 0
@@ -2441,6 +2448,128 @@ def cmd_qc(a) -> None:
 
 # --------------------------------------------------------------------------- cli
 
+def cmd_metrics(a) -> None:
+    """Compare-ready delivery metrics. Energy cut-edges need --project; word scores need --asr or --qc-json.
+
+    See references/ffmpeg.md for the Kash / Quinn vs Eric protocol.
+    """
+    import numpy as np
+    ff, ffprobe = _which("ffmpeg", a.ffmpeg), _which("ffprobe", a.ffprobe)
+    final = Path(a.final).expanduser().resolve()
+    report = {"seek_mode": "accurate", "final": str(final), "file": ffseek.file_metrics(ff, ffprobe, final)}
+    L = report["file"]["loudness"]
+    shots = []
+    if a.project:
+        sk = _lib("sidekit")
+        pp, proj = _load_project(a.project)
+        src = proj.get("_src_abs") or (
+            proj["src"] if Path(proj["src"]).is_absolute() else str((pp.parent / proj["src"]).resolve())
+        )
+        words = {}
+        if a.words:
+            words = json.loads(Path(a.words).expanduser().resolve().read_text(encoding="utf-8"))
+        fps = proj.get("fps", 30)
+        qc_shots = {}
+        if a.qc_json:
+            qc = json.loads(Path(a.qc_json).expanduser().resolve().read_text(encoding="utf-8"))
+            raw = (qc.get("gates") or qc).get("speech") or qc
+            for key, val in (raw.get("shots") or {}).items():
+                try:
+                    qc_shots[int(key)] = val
+                except (TypeError, ValueError):
+                    qc_shots[key] = val
+        model = None
+        mix = None
+        tl = timeline(proj)
+        for s, t0, t1 in tl:
+            if s.get("kind") != "clip":
+                continue
+            tin = float(s["src_in"])
+            out = float(s.get("audio_out") or (tin + s["frames"] / fps))
+            wl = words.get(str(s["i"]), words.get(s["i"], [])) or []
+            last_w = wl[-1]["w"] if wl else ""
+            first_w = wl[0]["w"] if wl else ""
+            me = sk.measure_end(ff, src, dict(s, audio_out=out), last_w, None, None)
+            head = sk.env_db(sk.pcm(ff, src, max(0.0, tin - 0.08), tin))
+            post = sk.env_db(sk.pcm(ff, src, out, out + 0.08))
+            floor = me["floor"]
+            rec = {
+                "i": s["i"], "beat": s.get("beat", ""), "who": s.get("who", ""),
+                "src_in": tin, "audio_out": out,
+                "acoustic_end": me["acoustic_end"],
+                "end_margin_ms": int(round((out - me["acoustic_end"]) * 1000)),
+                "end_grade": sk.end_grade(out, me["acoustic_end"], me.get("asr_end")),
+                "floor": floor,
+                "head_leak_db": round((float(np.mean(head)) if len(head) else floor) - floor, 1),
+                "post_out_db": round((float(np.mean(post)) if len(post) else floor) - floor, 1),
+                "first_want": first_w, "last_want": last_w,
+            }
+            q = qc_shots.get(s["i"]) or qc_shots.get(str(s["i"]))
+            if q:
+                rec["qc"] = {k: q.get(k) for k in
+                             ("last_want", "last_got", "last_p", "last_heard", "first_want",
+                              "first_got", "first_p", "first_heard", "end_grade", "end_margin_ms")
+                             if k in q}
+            if a.asr:
+                if mix is None:
+                    mix = sk.pcm(ff, str(final))
+                if model is None:
+                    model = sk.whisper(a, proj)
+                hw = sk.asr_words(model, mix[int(t0 * 16000):int(t1 * 16000)])
+                got_last = next((w for w in reversed(hw) if sk.nz(w["w"])), None)
+                got_first = next((w for w in hw if sk.nz(w["w"])), None)
+                rec["asr_heard"] = " ".join(w["w"] for w in hw)
+                rec["last_got"] = got_last["w"] if got_last else ""
+                rec["last_p"] = round(got_last["p"], 2) if got_last else 0
+                rec["first_got"] = got_first["w"] if got_first else ""
+                rec["first_p"] = round(got_first["p"], 2) if got_first else 0
+                rec["last_heard"] = bool(got_last) and (
+                    sk.nz(got_last["w"]) == sk.nz(last_w)
+                    or (len(sk.nz(last_w)) >= 4 and sk.nz(got_last["w"])[:4] == sk.nz(last_w)[:4])
+                    or (sk.nz(got_last["w"]) and sk.nz(last_w).endswith(sk.nz(got_last["w"])))
+                )
+                rec["first_heard"] = bool(got_first) and (
+                    sk.nz(got_first["w"]) == sk.nz(first_w)
+                    or (len(sk.nz(first_w)) >= 4 and sk.nz(got_first["w"])[:4] == sk.nz(first_w)[:4])
+                )
+            shots.append(rec)
+    report["shots"] = shots
+    if shots:
+        margins = [s["end_margin_ms"] for s in shots]
+        report["summary"] = {
+            "n_clips": len(shots),
+            "end_margin_ms_median": int(sorted(margins)[len(margins) // 2]),
+            "end_margin_ms_min": min(margins),
+            "end_early_count": sum(1 for m in margins if m < 0),
+            "end_fail_or_listen": sum(1 for s in shots if s["end_grade"] in ("FAIL", "LISTEN")),
+            "head_leak_db_max": max(s["head_leak_db"] for s in shots),
+            "post_out_db_max": max(s["post_out_db"] for s in shots),
+        }
+        if any("last_p" in s for s in shots):
+            ps = [s["last_p"] for s in shots if "last_p" in s]
+            report["summary"]["last_p_mean"] = round(sum(ps) / len(ps), 3)
+            report["summary"]["last_p_min"] = min(ps)
+            report["summary"]["last_heard_n"] = sum(1 for s in shots if s.get("last_heard"))
+            report["summary"]["first_heard_n"] = sum(1 for s in shots if s.get("first_heard"))
+    report["summary"] = report.get("summary") or {}
+    report["summary"]["I"] = L["I"]
+    report["summary"]["I_err"] = L["I_err"]
+    report["summary"]["TP"] = L["TP"]
+    report["summary"]["tp_over"] = L["tp_over"]
+    report["summary"]["LRA"] = L["LRA"]
+    report["summary"]["av_start_skew_s"] = report["file"].get("av_start_skew_s")
+    report["summary"]["size_bytes"] = report["file"].get("size_bytes")
+    report["summary"]["duration"] = report["file"].get("duration")
+    report["summary"]["seek_mode"] = report["seek_mode"]
+    text = json.dumps(report, indent=2)
+    print(text)
+    if a.out:
+        out = Path(a.out).expanduser().resolve()
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(text, encoding="utf-8")
+        print(f"[introkit] metrics -> {out}", flush=True)
+
+
 def main(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
     _maybe_reexec(argv)
@@ -2570,6 +2699,17 @@ def main(argv=None):
     q.add_argument("--no-speaker-check", dest="no_speaker_check", action="store_true",
                    help="skip the advisory right-speaker row (mouth motion vs speech; WARN only, cached per shot)")
     q.set_defaults(func=cmd_qc)
+
+    mt = dev(sub.add_parser("metrics", help="before/after delivery metrics: loudness, size, A/V skew, "
+                                            "per-shot cut-edge energy (optional --asr / --qc-json)"))
+    mt.add_argument("--final", required=True)
+    mt.add_argument("--project", default=None)
+    mt.add_argument("--words", default=None)
+    mt.add_argument("--qc-json", dest="qc_json", default=None,
+                    help="attach last/first word scores from an existing qc JSON without re-running ASR")
+    mt.add_argument("--asr", action="store_true", help="re-run per-shot mix ASR (slow; same engine as qc speech)")
+    mt.add_argument("--out", default=None, help="write JSON here (also printed)")
+    mt.set_defaults(func=cmd_metrics)
 
     sk = _lib("sidekit")
     ab = dev(sub.add_parser("assemble", help="sets.json -> project_<SET>.json + words_<SET>.json"))

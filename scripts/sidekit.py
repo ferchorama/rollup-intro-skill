@@ -87,15 +87,8 @@ def _save_json(p, v):
 
 
 def pcm(ff: str, path: str, a: float | None = None, b: float | None = None, sr: int = 16000):
-    import numpy as np
-    c = [ff, "-v", "error"]
-    if a is not None:
-        c += ["-ss", f"{max(0.0, a):.3f}"]
-    c += ["-i", str(path)]
-    if b is not None:
-        c += ["-t", f"{max(0.01, b - max(0.0, a or 0.0)):.3f}"]
-    c += ["-vn", "-ac", "1", "-ar", str(sr), "-f", "f32le", "-"]
-    return np.frombuffer(subprocess.run(c, capture_output=True).stdout, np.float32)
+    import ffseek
+    return ffseek.extract_pcm(ff, path, start=a, end=b, sr=sr, channels=1)
 
 
 def env_db(x, sr=16000, ms=10):
@@ -215,6 +208,10 @@ def cmd_assemble(a) -> None:
     sp_path = Path(a.sets).resolve()
     SP = _load_json(sp_path)
     beats = SP["sets"][a.set_name]
+    # 2026-11-13 (user rule): intros always open with the guest, never with a host.
+    if beats and (beats[0].get("who") or "").lower() != "guest":
+        print(f"assemble: WARN set {a.set_name}: beat 1 is '{beats[0].get('who')}', not the guest "
+              "- intros always open with the guest, never with a host")
     # 2026-11-03 (user rule): never two consecutive beats by the same speaker. With one host + the
     # guest that means strict guest/host/guest/host... alternation; with two hosts, host>host is fine
     # only when they are different people.
@@ -1134,6 +1131,10 @@ def speech_gate(a, ff, final, proj, words, cache, use_cache, wave_path):
             got = next((w for w in reversed(hw) if nz(w["w"])), None)
             g = nz(got["w"]) if got else ""
             heard = bool(got) and (g == want or (len(want) >= 4 and g[:4] == want[:4]) or (g and want.endswith(g)))
+            want0 = nz(wl[0]["w"]) if wl else ""
+            got0 = next((w for w in hw if nz(w["w"])), None)
+            g0 = nz(got0["w"]) if got0 else ""
+            first_heard = bool(got0) and (g0 == want0 or (len(want0) >= 4 and g0[:4] == want0[:4]))
             # word edge on the SOURCE: out-point vs the measured acoustic end of the last word
             nxt = shots[k + 1] if k + 1 < len(shots) and shots[k + 1]["kind"] == "clip" else None
             me = measure_end(ff, src, dict(s, audio_out=out), wl[-1]["w"] if wl else "", float(nxt["src_in"]) if nxt else None, model)
@@ -1141,7 +1142,10 @@ def speech_gate(a, ff, final, proj, words, cache, use_cache, wave_path):
             li = float(np.mean(ei)) if len(ei) else me["floor"]
             r = {"beat": s.get("beat", ""), "heard": " ".join(w["w"] for w in hw), "issues": issues, "diffs": diffs[:6],
                  "last_want": wl[-1]["w"] if wl else "", "last_got": got["w"] if got else "", "last_p": round(got["p"], 2) if got else 0,
-                 "last_heard": heard, "acoustic_end": me["acoustic_end"], "asr_end": me["asr_end"],
+                 "last_heard": heard,
+                 "first_want": wl[0]["w"] if wl else "", "first_got": got0["w"] if got0 else "",
+                 "first_p": round(got0["p"], 2) if got0 else 0, "first_heard": first_heard,
+                 "acoustic_end": me["acoustic_end"], "asr_end": me["asr_end"],
                  "end_margin_ms": int(round((out - me["acoustic_end"]) * 1000)), "end_grade": end_grade(out, me["acoustic_end"], me["asr_end"]),
                  "suggest_out": me["out_new"], "floor": me["floor"], "in_db": round(li, 1), "in_grade": dip_grade(li, me["floor"]), "join": join}
             cache[key] = r

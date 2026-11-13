@@ -20,7 +20,10 @@ ffmpeg -filters | grep -E 'drawtext|overlay|ebur128|loudnorm|blackdetect'   # ca
 ```
 
 Record: duration, fps, size, colour tags, audio sample-rate/channels, and whether both
-channels are identical (dual-mono).
+channels are identical (dual-mono). Also VFR (`r_frame_rate` vs `avg_frame_rate`), SAR,
+container `start_time`, and audio-vs-video start skew (`introkit.py probe`; see
+`references/ffmpeg.md`). `build`, `vet`, `qc` and windowed `transcribe` use accurate
+seeks (1 s preroll + output `-ss` + `atrim`).
 
 ## Stage 1 — reference teardown
 

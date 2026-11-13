@@ -25,19 +25,13 @@ SR = 16000
 
 
 def load_audio(ff: str, src, start: float | None = None, dur: float | None = None):
-    import numpy as np
-    cmd = [ff, "-hide_banner", "-loglevel", "error"]
-    if start:
-        cmd += ["-ss", f"{start:.3f}"]
-    cmd += ["-i", str(src)]
-    if dur:
-        cmd += ["-t", f"{dur:.3f}"]
-    p = subprocess.run(cmd + ["-vn", "-ac", "1", "-ar", str(SR), "-f", "f32le", "-"],
-                       capture_output=True)
-    if p.returncode:
-        sys.exit(f"[transcribe] ffmpeg could not decode {src}: "
-                 + p.stderr.decode("utf-8", "replace")[-400:])
-    return np.frombuffer(p.stdout, dtype=np.float32).copy()
+    import ffseek
+    t0 = start
+    t1 = None
+    if dur is not None:
+        t0 = 0.0 if t0 is None else t0
+        t1 = t0 + float(dur)
+    return ffseek.extract_pcm(ff, src, start=t0, end=t1, sr=SR, channels=1)
 
 
 def run_asr(model, audio, language="en", hotwords=None, vad=True, offset=0.0) -> list[dict]:

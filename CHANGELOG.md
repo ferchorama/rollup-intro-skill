@@ -1,5 +1,25 @@
 # Changelog
 
+## 2026-11-13 (FFmpeg accurate seeks + delivery metrics, used by the pipeline)
+Informed by a review of [kajisho5/ffmpeg-skill](https://github.com/kajisho5/ffmpeg-skill)
+v3.8.4 (MIT License, Copyright (c) 2026 kajisho5). We did not vendor its 42 scripts; the
+code and wording here are ours (`scripts/ffseek.py`, wired into introkit / sidekit /
+transcribe). Accurate preroll seeks are the only seek path (the old single input `-ss`
+was removed). Handbook and the Kash/Quinn vs Eric metric protocol: `references/ffmpeg.md`.
+- **Accurate cuts (new default):** `build` picture and dialogue, `frame` face scans, `vet`/`qc`
+  energy reads, and windowed `transcribe` seek 1 s early then drop that margin on the output
+  side, with `atrim` bounding audio length. Fixes input `-ss` landing late on B-frame MP4
+  (a known cause of clipped last words and stray next words).
+- **probe:** also reports VFR suspicion, SAR, start_time, colour tags, A/V start skew.
+- **metrics (new):** `introkit.py metrics --final F --project P --words W` writes cut-edge
+  energy, loudness (I, LRA, TP, I_err, tp_over), size, duration, A/V skew. Optional `--asr`
+  or `--qc-json`. `build` writes `work/build_metrics.json` (includes `build_elapsed_s`).
+- **qc speech:** also records first-word got/p/heard (measurement only; no new FAIL).
+
+## 2026-11-13 (intros always open with the guest)
+- **Hard rule:** intros always open with the guest, never with a host. Documented in SKILL.md
+  and references/line-selection.md. `assemble` WARNs (does not refuse) if beat 1 is not the guest.
+
 ## 2026-11-12 (editorial checks: openers, cut boundary, stranger test, signals, speaker row)
 All new code is ours (`scripts/editcheck.py`); ideas and thresholds were informed by a review of
 SupoClip (AGPL-3.0), but no code or prompt text was copied. No new dependencies, no accounts.

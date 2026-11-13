@@ -163,6 +163,20 @@ hook is a complete sentence; trimming it to the reference's 3.68 s would orphan 
 | section timing | 2 deltas, documented | ±1 s | ✗ (stated) |
 ```
 
+## Before / after metrics (Kash, Quinn vs Eric)
+
+To measure whether the accurate-seek path improved cut edges, run the same command on a
+finished intro from before the change and on a new Eric build. Details and the metric
+table: `references/ffmpeg.md`.
+
+```
+introkit.py metrics --final FINAL.mp4 --project P.framed.json --words W.json --out metrics.json
+```
+
+Energy edges (`end_margin_ms`, `head_leak_db`, `post_out_db`) need no ASR. Attach a prior
+`qc` JSON with `--qc-json` or pass `--asr` for first/last-word confidence. `build` also
+writes `intros\work\build_metrics.json` (elapsed, seek mode, loudness, size).
+
 ## Out-point tail (rule 025/027)
 For every clip, view the 300 ms after `audio_out` at +20..+40 dB and transcribe it boosted;
 any voiced energy or token there fails the gate until a human listens.
