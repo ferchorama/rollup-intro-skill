@@ -86,6 +86,39 @@ sessions taught: editorial rules the client enforced, kit limits (true peak meas
 AAC, sting truncated by a short end card, no music fade option, non-square SAR) and the
 exact workarounds. Add new lessons there after every delivery.
 
+## B2 house style — the default for every intro (2026-11-16)
+
+**Reference example:** `K:\Lior Messika\intros\THE_ROLLUP_Lior_Messika_ColdOpen_B2_original.mp4` (30.73 s, -14.0 LUFS, TP -1.8). Fernando signed it off as the way
+every intro is made; its project is `K:\Lior Messika\intros\work\project_B2.framed.json` +
+`words_B2.json` + `build_B2.log`. The kit now does all of it by default (no side scripts):
+
+| Technique | Where it lives now | B2 numbers |
+|---|---|---|
+| Music only: **no logo, end card, sting or jingle**; 1 s (30 f) black tail; name ends `_original` | `assemble` (`end_card: true` in sets.json brings the old end back) | 30.733 s total |
+| Bed fades (cosine) from the **end of the last word** to 50 ms before the end; ducked from the last clip's start | `end_audio_plan` (`no_logo`) | fade 29.713 → 30.683, hold 28.933 → 30.733 |
+| **Bed level -26 dB RMS** (was -20) | `stage_audio`, project `music_rms_db` | -26.3 |
+| **Per-shot duck depth, 180 ms cosine ramps, auto-solved** so active speech is **10.6 dB** over the bed in every shot and **13 dB** under the final guest line (harder duck on the button) | `stage_audio` (`duck_gap_db`, `duck_final_gap_db`, `duck_auto`, `duck_ramp_ms`; an explicit shot `duck` is kept) | gaps 10.1-10.7 dB, final line 12.9-14.8 dB |
+| Captions timed from **padded-span ASR** (0.5 s before the in, 0.8 s after the out); t < e <= dur, never negative, tail words redistributed, **every word on screen >= 150 ms**, a later page is delayed (no flash at page breaks) | `assemble`; `introkit retime` after any in/out edit | 83 words, all VIS_OK |
+| Lines **split into pieces** (up to 10 per beat) to cut fillers, stutters and false starts, each piece with a short fade (20-40 ms; 100-120 ms at a beat end) | `assemble` (pieces `a`-`j`) | hook = 4 pieces, Andy = 3, button = 3 |
+| In-point after the **previous word's leftover** (in in the dip after it) | `assemble` WARN `in cuts into '<w>'` | — |
+| **End fade starts only after the last word has fully ended** | `vet --write` (fade shrinks to 8 ms instead of eating the word) | — |
+| **Edge ASR on the final mp4** (whole line, first / last 1.2 s, fillers, script diff, fade vs acoustic end) | `introkit edges` | — |
+| **Viral hooks only**, guest first, strict alternation, equal host lines | `references/line-selection.md`, `assemble` checks order | Lior hook / Andy / Lior / Robbie / Lior button |
+
+Not part of B2 (added later for B3, use only when that layout needs it): caption `cy 740` on
+host singles to clear an on-screen logo.
+
+Dry run (no render) to check the bed and ducks of any project:
+`introkit.py build --project P.framed.json --words W.json --out <scratch> --audio-only`.
+On B2 it prints exactly the `build_B2.log` level lines; with its ducks removed the auto-solver lands
+within 0.3 dB of them.
+
+**Build once, then hand off.** Build each version ONCE, run ONE `qc` (+ `edges`) per file,
+report, and stop: Fernando does the listening QC himself. No rebuild loops unless he asks.
+
+**TheStitcher-V2:** when a stitched delivery is asked for, always run it with `--no-dynamics` so
+the interview audio is never changed (no compression / levelling on the episode).
+
 ## QC: four decisive gates in one command (details in `references/qc.md`)
 
 Checks that depend only on the chosen span run ONCE, at selection time, and are cached
@@ -147,6 +180,14 @@ introkit.py qc  --final F.mp4 --project P.framed.json [--words W.json] [--out qc
 
 - **3 versions per guest**, each with a different hook combination (hook / host Q / answer /
   button), never the same hook twice.
+- **Every hook must be viral (user rule, 2026-11-16):** provocative, surprising, quotable, with
+  strong standalone value for a stranger scrolling past. Bland, generic or definitional lines are
+  rejected even when they are clean: "AI is a technology, crypto is a technology" is the canonical
+  reject. Re-check every other line of the set for the same hook value (B2 hook: "Nobody's
+  incentivized to share or monetize their own data, because then that just means I'm giving up my
+  secrets.").
+- **Host lines:** equal number of host beats per host across the set; each host line 4-6 s and
+  self-contained (passes the stranger test without the episode).
 - **Host lines must be engaging and specific to the guest** (what they built, a number, a
   claim to react to). Generic prompts ("What are you most excited about?") are replaced.
 - Spell names and acronyms as on the chyron / slides, not as ASR heard them (DTCC, not "DTC").
@@ -183,6 +224,9 @@ introkit.py qc  --final F.mp4 --project P.framed.json [--words W.json] [--out qc
 7. **Frame:** `introkit.py frame --project project_A.json` (side layout by default; list
    broadcast furniture as `avoid: [[x,y,w,h],...]`; per-speaker `speakers: {name: {pick,
    text_side, zoom}}` when two people share a camera). Read `<stem>.framed.frame.txt`.
+7b. **Retime captions** after any hand edit of in/out points: `introkit.py retime --project
+   project_A.framed.json --words words_A.json` (padded ASR, >= 150 ms per word; `assemble` already
+   did this for the original spans). Check bed + ducks with `build --audio-only` if in doubt.
 8. **Render** (`references/pipeline.md`): `build` does picture -> graphics -> audio -> mux,
    with SAR 1:1 + bt709 tags, the AAC remaster (-14 LUFS, TP <= -1.1) and faststart built in.
    Review with `introkit.py preview`, never ship the preview.
@@ -190,6 +234,10 @@ introkit.py qc  --final F.mp4 --project P.framed.json [--words W.json] [--out qc
    intros/work/qc_A.json`. Ship only on PASS; look at the contact sheet; listen to LISTEN rows;
    look at any SPEAKER WARN shot (advisory: it never blocks a PASS).
    After a fix, re-run `qc`: only the shots whose inputs changed are re-checked.
+   Then `introkit.py edges --final intros/NAME.mp4 --project project_A.framed.json --words
+   words_A.json` (edge ASR on the delivered mix; FIRST / LAST / FILLER / DIFF / FADE flags).
+   **Build once and hand off** (B2 house style): one build, one qc + edges per file, report the
+   paths, hook text and any flags; Fernando QCs by ear. Re-build only on his request.
 
 ## Motion and type contract
 
@@ -206,14 +254,21 @@ introkit.py qc  --final F.mp4 --project P.framed.json [--words W.json] [--out qc
 
 ## Sound contract
 
-- Music: the bundled bed (`assets/music/`), ducked ~14 dB under speech and released in every
-  black gap; tape-stop into the title card, boom on each cut, two-note sting on the logo
-  (`assets/sfx/`).
+- Music: the bundled bed (`assets/music/`) at **-26 dB RMS**, ducked per shot (auto-solved, 180 ms
+  cosine ramps) so speech sits **~10.6 dB over the bed**, **~13 dB under the final guest line**,
+  released in every black gap. **Default since 2026-11-16 (B2): music only, no logo, no sting, no
+  jingle, 1 s black tail.** With `end_card: true` in sets.json: tape-stop into the title card,
+  boom on each cut, two-note sting on the logo (`assets/sfx/`).
 - Speech is the master. If music and speech compete, the music loses.
-- **End:** the bed stays ducked from the last clip, fades out (cosine) from the end of the last
+- **End (B2 default, no logo):** the bed stays ducked from the last clip's start, fades out
+  (cosine) from the end of the last word to 50 ms before the end of the 1 s black tail.
+- **End (with end_card):** the bed stays ducked from the last clip, fades out (cosine) from the end of the last
   word to 40 ms before the sting and stays down through the end black; the sting plays alone
   and in full (final black >= 15 frames). Automatic at build; explicit `music_fade_out` /
   `duck_hold` in the project still win.
+- **Fade rule (B2):** every end fade starts only AFTER the last word has fully ended (acoustic
+  end, not the ASR end); a faint tail of the word is better than a clipped one. `vet --write`
+  shrinks the fade (8 ms floor) rather than start it inside the word; `edges` flags FADE.
 - **Last word:** out-point at the measured acoustic end + tail, 20-25 ms speech fade
   (`speech_fade_ms`, default 25), video follows audio. **Err late (2026-11-03):** final plosives
   (/k/ /t/ /p/: 'attack') and vowel decays ('three') need the later out. `vet --write` now ends a
@@ -246,7 +301,7 @@ that was used). Never move or overwrite earlier deliverables; a revision is a ne
 
 ## References
 
-- `RULES.md` — running rules 000-030, read first
+- `RULES.md` — running rules 000-036, read first
 - `TOOLS.md` — setup (uv, one folder), ffmpeg per OS, hardware tiers, CPU costs
 - `ASSETS.md` — bundled music, SFX, logo, fonts; provenance
 - `references/line-selection.md` — what makes a line usable, hook compliance, out-points

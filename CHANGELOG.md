@@ -1,5 +1,29 @@
 # Changelog
 
+## 2026-11-16 (B2 house style becomes the default)
+Reference: `K:\Lior Messika\intros\THE_ROLLUP_Lior_Messika_ColdOpen_B2_original.mp4` — Fernando: "from now on you will use the same techniques you applied for that one".
+- **introkit `stage_audio`:** bed RMS target -26 dB (was -20, project `music_rms_db`); per-shot duck depth
+  with 180 ms cosine ramps (was a hard step); shots without `duck` are auto-solved to a 10.6 dB speech-over-bed
+  gap and 13 dB under the final guest beat (`duck_gap_db`, `duck_final_gap_db`, `duck_auto`, `duck_ramp_ms`);
+  WARN when a shot's gap is < 9.5 dB. Replaces the per-project `_build.py` wrapper and `tune_duck.py`.
+- **introkit `build --audio-only` / `--dry-run`:** prints bed / duck / per-shot levels, renders nothing.
+- **`end_audio_plan`:** no-logo projects get the bed fade from the last word's end to total - 50 ms and
+  the duck hold from the last clip's start (replaces `patch_nologo.py`).
+- **sidekit `assemble`:** default end = no logo / no sting / 1 s black tail / `_original` name
+  (`end_card: true` for the old end); up to 10 pieces per beat (was 3, `abc`); captions from padded-span
+  ASR (0.5 s / 0.8 s) through `fit_times` + `enforce_min_vis` (t < e <= dur, never a negative e, tail words
+  redistributed, >= 150 ms per word, no flash at page breaks); WARN when the in cuts into the previous
+  word's leftover.
+- **new `introkit retime`** (was `_retime.py`) and **`introkit edges`** (was `final_qc.py`: edge ASR on the
+  final mp4, FIRST / LAST / FILLER / DIFF / FADE).
+- **`vet --write`:** the end fade never starts before the acoustic end of the last word (fade shrinks to
+  8 ms instead).
+- Docs: SKILL.md "B2 house style", RULES 031-036 (viral hooks, B2 default, fade rule, split lines, build once
+  then hand off, TheStitcher-V2 `--no-dynamics`), line-selection viral rule, pipeline / qc sections.
+- Verified: B2 dry run with its framed project prints exactly the `build_B2.log` bed / duck / gap lines;
+  with the ducks removed the auto-solver lands at 10.4-10.6 dB (final line 12.9-13.0 dB), and `retime` on
+  B2 gives VIS_OK for all 83 words.
+
 ## 2026-11-13 (fix extract_pcm atrim after preroll)
 - **Bug:** \fseek.extract_pcm\ used the picture recipe (\-ss (T-1) -i SRC -ss 1 -t D\) plus \trim=end=D\. After output \-ss\, PTS still start at the 1 s preroll, so \trim=end=D\ kept only \D-1\ seconds and dropped the out-point. \et\ / \qc\ / \metrics\ energy (head_leak_db, post_out_db, end_margin) and windowed \	ranscribe\ reads were short; \stage_audio\ also used \extract_pcm\, so built dialogue was missing the last ~1 s of every shot (padded with silence under the music bed).
 - **Fix:** audio extracts now input-seek the preroll, then \trim=start=m:end=m+D,asetpts=PTS-STARTPTS\ (no output \-ss\). Windows are exactly D long. Picture seeks (\stage_base\, \rame\ scans) were already duration-correct (no atrim) and are unchanged.

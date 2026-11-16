@@ -72,6 +72,14 @@ with a host. Beat 1 is the guest hook. `assemble` WARNs if the first beat is not
 
 ## What makes a hook
 
+**Viral rule (2026-11-16, user rule):** a hook must be provocative, surprising or quotable and
+make sense to a stranger with no context: a contrarian claim, a confession, a stake, a vivid
+image. Reject bland, definitional or generic lines however clean they are. Canonical reject:
+"AI is a technology, crypto is a technology" (true, flat, no tension). Canonical keep (Lior
+B2): "Nobody's incentivized to share or monetize their own data, because then that just means
+I'm giving up my secrets." Apply the same test to the host lines and the button. Order: guest
+hook first, strict speaker alternation, equal host lines per host.
+
 - a **claim** the guest is willing to defend in one breath ("X is not enough to do Y")
 - contrary to the obvious take, but not contrarian for sport
 - forward-looking and serious; never a joke

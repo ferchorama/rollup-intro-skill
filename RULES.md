@@ -146,6 +146,34 @@ narrative line, same speaker, same length ±0.5 s) cut and ready.
 Hook ≈3.68 s, title card at ≈19.52 s, end card from ≈29.0 s, total ≈33.5 s. Report every
 delta (rule 015).
 
+## 031 — Viral hooks only (2026-11-16)
+Every hook (and every other line of a set) must be provocative, surprising, quotable and carry
+standalone value. Bland, definitional lines are rejected even when clean ("AI is a technology,
+crypto is a technology"). Versions that used a rejected line are deleted and replaced with the
+next version number of the same letter.
+
+## 032 — B2 house style is the default (2026-11-16)
+Reference: Lior Messika `ColdOpen_B2_original`. Music only (no logo / end card / sting / jingle),
+1 s black tail, bed -26 dB RMS, per-shot auto duck (10.6 dB gap, 13 dB under the final guest
+line, 180 ms cosine ramps), padded-ASR captions (0.5 / 0.8 s) with >= 150 ms per word and no flash
+at page breaks. All built into `assemble` / `build` / `retime` (see SKILL.md "B2 house style").
+
+## 033 — End fades start after the last word
+An end fade never starts inside the last word: it starts at or after the acoustic end. Prefer a
+faint trailing word over a clipped one. Check it on the delivered mp4 (`introkit edges`).
+
+## 034 — Split lines to remove fillers, stutters, false starts and leftovers
+A beat may be several pieces (up to 10) of the same speaker; cut each um / uh / repeat / false
+start out at its dips with 20-40 ms fades. Start a piece after the previous word's leftover
+(`assemble` WARNs `in cuts into`).
+
+## 035 — Build once, hand off
+One build, one `qc` + `edges` per file, then report and stop. Fernando does the listening QC; no
+rebuild loops without his request.
+
+## 036 — TheStitcher-V2 runs with --no-dynamics
+The interview audio is never changed by the stitcher: always pass `--no-dynamics`.
+
 ## 030 — Self-contained skill
 Everything runs from the skill folder and its env folder: no absolute user paths, no
 external apps. Diarization uses the bundled ONNX embedding path by default (no token).

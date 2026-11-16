@@ -1049,6 +1049,32 @@ def timeline(proj: dict) -> list:
     return out
 
 
+# B2 audio defaults (2026-11-16, reference: Lior Messika ColdOpen B2_original, the intro Fernando signed off as
+# "the way to make them"). The bed sits at -26 dB RMS (was -20), each shot gets its own duck depth with 180 ms
+# cosine ramps, auto-solved so active speech is DUCK_GAP_DB over the bed in every shot and DUCK_FINAL_GAP_DB under
+# the final guest line (harder duck on the button). Project keys override: music_rms_db, duck_auto (false = fixed
+# 0.72 unless a shot sets duck), duck_gap_db, duck_final_gap_db, duck_ramp_ms; a shot's explicit `duck` is kept.
+MUSIC_RMS_DB = -26.0
+DUCK_BASE = 0.72
+DUCK_GAP_DB = 10.6
+DUCK_FINAL_GAP_DB = 13.0
+DUCK_MIN, DUCK_MAX = 0.40, 0.95
+DUCK_RAMP_MS = 180.0
+
+
+def final_guest_ids(proj: dict) -> set:
+    """Shot ids of the last beat when it is the guest's (consecutive clips after the last black)."""
+    clips = [s for s in proj["shots"] if s.get("kind") == "clip"]
+    if not clips or (clips[-1].get("who") or clips[-1].get("speaker")) != "guest":
+        return set()
+    out, shots = set(), proj["shots"]
+    k = max(i for i, s in enumerate(shots) if s.get("kind") == "clip")
+    while k >= 0 and shots[k].get("kind") == "clip":
+        out.add(shots[k].get("i"))
+        k -= 1
+    return out
+
+
 def end_audio_plan(proj: dict):
     """Music fade-out [a, b] and duck hold [a, b] in timeline seconds. Explicit project keys
     music_fade_out / duck_hold win (false = off). Default (needs sfx.sting_at): when only black /
@@ -1058,6 +1084,19 @@ def end_audio_plan(proj: dict):
     sting = (proj.get("sfx") or {}).get("sting_at")
     mf, dh = proj.get("music_fade_out"), proj.get("duck_hold")
     if sting is None:
+        if proj.get("no_logo") and (mf is None or dh is None):
+            # B2 no-logo end: bed fades (cosine) from the END OF THE LAST WORD to 50 ms before the end of the
+            # 1 s black tail, and stays ducked from the last clip's start to the end. No sting, no jingle.
+            tl = timeline(proj)
+            clips = [k for k, (s, a, b) in enumerate(tl) if s["kind"] == "clip"]
+            if clips:
+                s, a, b = tl[clips[-1]]
+                total = tl[-1][2]
+                speech_end = a + ((s["audio_out"] - s["src_in"]) if s.get("audio_out") is not None else s["frames"] / proj.get("fps", 30))
+                if mf is None:
+                    mf = [round(speech_end, 3), round(total - 0.05, 3)]
+                if dh is None:
+                    dh = [round(a, 3), round(total, 3)]
         return (mf or None), (dh or None)
     tl = timeline(proj)
     clips = [k for k, (s, a, b) in enumerate(tl) if s["kind"] == "clip"]
@@ -1078,7 +1117,7 @@ def end_audio_plan(proj: dict):
     return (mf or None), (dh or None)
 
 
-def stage_audio(proj, ff, work: Path) -> Path:
+def stage_audio(proj, ff, work: Path, audio_only: bool = False) -> Path:
     import numpy as np
     SR, fps = 48000, proj.get("fps", 30)
     total = sum(s["frames"] for s in proj["shots"]) / fps
@@ -1152,12 +1191,76 @@ def stage_audio(proj, ff, work: Path) -> Path:
         a = ka if mask[i] > prev else kr
         prev = a * prev + (1 - a) * mask[i]
         env[i] = prev
-    depth = np.full(N, 0.72, np.float32)
-    for a, b, _, d, _ in gspans:   # per-shot duck depth (shot key duck, 0-1; default 0.72)
-        if d is not None:
-            depth[int(a * SR):int(b * SR)] = float(d)
+    # ---- B2 bed + per-shot duck (see MUSIC_RMS_DB / DUCK_* above)
+    mus_t = float(proj.get("music_rms_db", proj.get("_mus_t", MUSIC_RMS_DB)))
+    ramp = int(SR * float(proj.get("duck_ramp_ms", DUCK_RAMP_MS)) / 1000)
+
+    def build_depth(dmap):
+        """Per-shot depth with cosine ramps around each shot (B2 _build.py, identical numbers)."""
+        depth = np.full(N, DUCK_BASE, np.float32)
+        for a, b, _, _, si in gspans:
+            d = dmap.get(si)
+            if d is None:
+                continue
+            i0, i1 = int(a * SR), int(b * SR)
+            target, base = float(d), DUCK_BASE
+            depth[i0:i1] = target
+            a0 = max(0, i0 - ramp); n_in = i0 - a0
+            if n_in:
+                w = 0.5 - 0.5 * np.cos(np.pi * np.linspace(0, 1, n_in, dtype=np.float32))
+                depth[a0:i0] = np.maximum(depth[a0:i0], base + (target - base) * w) if target > base else base + (target - base) * w
+            b1 = min(N, i1 + ramp); n_out = b1 - i1
+            if n_out:
+                w = 0.5 - 0.5 * np.cos(np.pi * np.linspace(0, 1, n_out, dtype=np.float32))
+                depth[i1:b1] = target + (base - target) * w
+        return depth
+
+    def act_db(x):
+        n = int(0.05 * SR)
+        fr = np.array([np.sqrt(np.mean(x[j:j + n] ** 2)) + 1e-12 for j in range(0, max(1, len(x) - n), n)])
+        if not len(fr):
+            return -99.0
+        fd = 20 * np.log10(fr)
+        act = fr[fd > fd.max() - 20]
+        return float(20 * np.log10(np.sqrt(np.mean(act ** 2)) + 1e-12)) if len(act) else -99.0
+
+    sp_lv = {si: act_db(dlg[int(a * SR):int(b * SR)].mean(1)) for a, b, _, _, si in gspans}
+    fixed = {si: float(d) for a, b, _, d, si in gspans if d is not None}
+    free = [si for a, b, _, d, si in gspans if d is None]
+    finals = final_guest_ids(proj)
+    gap_t = float(proj.get("duck_gap_db", DUCK_GAP_DB))
+    gap_f = float(proj.get("duck_final_gap_db", DUCK_FINAL_GAP_DB))
+    dmap = dict(fixed)
+    if free and proj.get("duck_auto", True):
+        cur = {si: DUCK_BASE for si in free}
+        for it in range(12):
+            dm = {**fixed, **cur}
+            m = norm(mus * (1 - build_depth(dm) * env)[:, None], mus_t)
+            done, short = True, 0.0
+            for a, b, _, _, si in gspans:
+                if si not in cur:
+                    continue
+                tgt = gap_f if si in finals else gap_t
+                g = sp_lv[si] - 20 * np.log10(np.sqrt(np.mean(m[int(a * SR):int(b * SR)].mean(1) ** 2)) + 1e-12)
+                if abs(g - tgt) > 0.15:
+                    done = False
+                nd = min(DUCK_MAX, max(DUCK_MIN, 1 - (1 - cur[si]) * 10 ** ((g - tgt) / 20)))
+                if nd >= DUCK_MAX and g < tgt - 0.3:
+                    short = max(short, tgt - g)
+                cur[si] = round(float(nd), 3)
+            if short > 0.2:          # depth maxed out somewhere: lower the whole bed instead
+                mus_t -= short
+            if done:
+                break
+        dmap = {**fixed, **cur}
+        print(f"[introkit] auto duck: bed {mus_t:.1f} dB RMS, gap {gap_t} dB (final guest line {gap_f} dB, shots "
+              f"{sorted(finals)}), {it + 1} pass(es)", flush=True)
+    elif free:
+        dmap.update({si: DUCK_BASE for si in free})
+    depth = build_depth(dmap)
     mus = mus * (1 - depth * env)[:, None]
-    mus = norm(mus, -20.0)
+    mus = norm(mus, mus_t)
+    print(f"[introkit] music bed RMS target {mus_t:.1f} dB, duck ramps {ramp * 1000 // SR} ms", flush=True)
     if mf:          # cosine fade of the bed, done before the sting (no music under the sting)
         tt = np.arange(N) / SR
         g = np.where(tt < mf[0], 1.0, np.where(tt >= mf[1], 0.0,
@@ -1174,8 +1277,13 @@ def stage_audio(proj, ff, work: Path) -> Path:
         act = fr[fd > fd.max() - 20] if len(fr) else fr
         sp = 20 * np.log10(np.sqrt(np.mean(act ** 2)) + 1e-12) if len(act) else -99
         mu = 20 * np.log10(np.sqrt(np.mean(mm ** 2)) + 1e-12)
+        dd = dmap.get(si, d)
         print(f"[introkit] level shot {si}: speech {sp:.1f} dB, music {mu:.1f} dB, gap {sp - mu:.1f} dB"
-              + (f" (gain {g:+.1f} dB)" if g else "") + (f" (duck {d})" if d is not None else ""), flush=True)
+              + (f" (gain {g:+.1f} dB)" if g else "") + (f" (duck {dd})" if dd is not None else ""), flush=True)
+        if sp - mu < 9.5:
+            print(f"[introkit] WARN shot {si}: speech only {sp - mu:.1f} dB over the bed (want >= ~10)", flush=True)
+    if audio_only:
+        return None
 
     # sfx
     sfx = np.zeros((N, 2), np.float32)
@@ -1379,6 +1487,10 @@ def cmd_build(a) -> None:
 
     import time as _time
     t_build = _time.time()
+    if getattr(a, "audio_only", False):     # dry run: bed level + per-shot duck numbers only, no render
+        print("[introkit] audio (dry run, nothing rendered)")
+        stage_audio(proj, ff, work, audio_only=True)
+        return
     print("[introkit] base picture");  stage_base(proj, ff, ffprobe, work)
     print("[introkit] graphics");      ovl = stage_overlay(proj, work, words)
     print("[introkit] audio");         aud = stage_audio(proj, ff, work)
@@ -2655,6 +2767,8 @@ def main(argv=None):
     b.add_argument("--fonts", default=None, help="font folder (else project fonts_dir, "
                                                   "INTROKIT_FONTS, OS font folders)")
     b.add_argument("--keep-overlay", action="store_true")
+    b.add_argument("--audio-only", "--dry-run", dest="audio_only", action="store_true",
+                   help="dry run: print bed level, auto-duck and per-shot speech/music gap; render nothing")
     b.set_defaults(func=cmd_build)
 
     v = dev(sub.add_parser("preview", help="small review copy (not the deliverable)"))
@@ -2718,6 +2832,21 @@ def main(argv=None):
     ab.add_argument("--out", default=None, help="folder for project/words json (default: <out_dir>\\work if "
                                                 "sets.json has out_dir, else <source video folder>\\intros\\work)")
     ab.set_defaults(func=sk.cmd_assemble)
+
+    rt = dev(sub.add_parser("retime", help="B2 caption retime: padded-span ASR (0.5 s before / 0.8 s after), "
+                                           "t < e <= dur, every word on screen >= 150 ms, no flash at page breaks"))
+    rt.add_argument("--project", required=True)
+    rt.add_argument("--words", required=True)
+    rt.add_argument("--shots", default=None, help="only these shot numbers, e.g. 1,3,4")
+    rt.set_defaults(func=sk.cmd_retime)
+
+    ed = dev(sub.add_parser("edges", help="B2 edge check on the FINAL mp4: per shot ASR of the whole line + the "
+                                          "first / last 1.2 s, fillers, script diff, end fade vs acoustic end"))
+    ed.add_argument("--final", required=True)
+    ed.add_argument("--project", required=True)
+    ed.add_argument("--words", required=True)
+    ed.add_argument("--out", default=None, help="JSON report (default <final stem>_edges.json in the project folder)")
+    ed.set_defaults(func=sk.cmd_edges)
 
     vt = dev(sub.add_parser("vet", help="selection-time checks per shot, cached: stutters/fillers (ASR VAD on+off), "
                                          "acoustic end of the last word, dip grade vs room floor, headroom; --write fixes outs"))

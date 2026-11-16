@@ -219,6 +219,29 @@ See `qc.md`. Emit the numbers into `QC_REPORT.md` from the measurement, never fr
 - Files are opened with `pathlib`; separators are never concatenated by hand.
 - The only platform-specific call is finding a font directory; pass `--fonts`.
 
+## B2 defaults (2026-11-16) — assemble, retime, audio, edges
+
+Reference project: `K:\Lior Messika\intros\work\project_B2.framed.json` (`build_B2.log`).
+
+- **assemble:** pieces per beat up to 10 (`1a`..`1j`); each piece's words are timed from Whisper on
+  the padded span `[in - 0.5, out + 0.8]`, aligned to the script (script spelling wins), then
+  `fit_times` (t < e <= dur, never negative, words past the cut spread inside the shot, first word
+  from frame 0) and `enforce_min_vis` (every word on screen >= 150 ms; a later page is delayed, never
+  flashed). Default end = no logo: final black 30 f, `no_logo: true`, `sfx.sting: null`, name
+  `<prefix>_<SET>_original` (`name_suffix`); `end_card: true` restores the old logo end.
+- **retime:** `introkit.py retime --project P --words W [--shots 1,4]` re-runs that timing after
+  hand edits of `src_in` / `audio_out` / `frames` (keeps `<words>.pre_retime.json`).
+- **audio (stage 6):** bed `norm` to `music_rms_db` (default -26.0; legacy `_mus_t` honoured);
+  per-shot depth with 180 ms cosine ramps (`duck_ramp_ms`); shots without an explicit `duck` are
+  auto-solved (up to 12 passes, depth 0.40-0.95) to `duck_gap_db` 10.6 and, for the final guest
+  beat, `duck_final_gap_db` 13.0; if a depth maxes out the whole bed is lowered. `duck_auto: false`
+  = fixed 0.72. Logs `auto duck`, `music bed RMS target`, and `level shot N ... (duck d)`, plus a
+  WARN for any gap < 9.5 dB. No-logo end: fade `[last word end, total - 0.05]`, hold
+  `[last clip start, total]`.
+- **dry run:** `build ... --audio-only` (alias `--dry-run`) stops after the level lines.
+- **edges:** `introkit.py edges --final F --project P --words W` -> `<final stem>_edges.json`;
+  exits 1 when any shot is flagged.
+
 ## Per-shot audio level (2026-11-03)
 
 Shot keys read by `build` (stage_audio): `gain_db` (speech gain, dB, after the global -18 dB

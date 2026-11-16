@@ -147,6 +147,14 @@ hook is a complete sentence; trimming it to the reference's 3.68 s would orphan 
 - final frame is the end card, not black
 - mean RGB of the end card is not neutral grey (it should be navy/gold)
 
+## Edge ASR on the final (`introkit edges`, B2 workflow)
+
+Run after `qc`. Per clip, on the DELIVERED mix: Whisper on the whole line (VAD off and on) and on
+the first / last 1.2 s. Flags: **FIRST** / **LAST** (edge word not heard as scripted), **FILLER**
+(um / uh / hmm ...), **DIFF** (missing / extra words vs the script), **FADE** (the end fade starts
+before the acoustic end of the last word, measured on the source). A flag is a LISTEN item for
+Fernando, not an automatic rebuild (build once, hand off).
+
 ## Report template
 
 ```markdown

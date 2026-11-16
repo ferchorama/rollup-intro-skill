@@ -203,6 +203,218 @@ def align(script, aw, t0, t1):
     return T
 
 
+# ----------------------------------------------------------------------- B2 caption timing
+# 2026-11-16 (reference: Lior Messika B2_original). Word times come from ASR on a PADDED span (0.5 s before the
+# in, 0.8 s after the out) so Whisper hears whole words at the edges, then: t < e <= dur, nothing negative, tail
+# words past the cut redistributed inside the shot, every word on screen >= MIN_VIS, a later caption page is
+# delayed (never flashed) so the page before it stays up long enough.
+PAD0, PAD1, MIN_VIS = 0.5, 0.8, 0.150
+
+
+def padded_asr(model, ff, src, t0, t1):
+    a0 = max(0.0, t0 - PAD0)
+    aw = [dict(w, t=w["t"] + a0, e=w["e"] + a0) for w in asr_words(model, pcm(ff, src, a0, t1 + PAD1))]
+    aw2 = []
+    for w in aw:                                      # merge "24" + "-7"
+        if aw2 and (w["w"].startswith("-") or w["w"].startswith("%")):
+            aw2[-1]["e"], aw2[-1]["w"] = w["e"], aw2[-1]["w"] + w["w"]
+        else:
+            aw2.append(w)
+    return aw2
+
+
+def edge_warnings(aw, T, t0, t1):
+    """Leftover of the previous word right after the in / the next word before the out (padded ASR)."""
+    out = []
+    if not T:
+        return out
+    first_t = T[0][0]
+    for w in aw:
+        mid = (w["t"] + w["e"]) / 2
+        # Whisper word edges run 50-300 ms early/late, so only a clear overlap is reported. Outs are not
+        # checked here (Whisper's next-word start is usually early): vet measures them acoustically.
+        if w["t"] < first_t - 0.02 and mid < first_t and w["e"] > t0 + 0.08:
+            out.append(f"in cuts into '{w['w']}' (ends {w['e'] - t0:+.2f}s after the in): move the in to the dip after it")
+    return out
+
+
+def fit_times(script, T, t0, t1, dur):
+    rows = []
+    for i, (w, (s, e)) in enumerate(zip(script, T)):
+        rt, re_ = s - t0, e - t0
+        if re_ < rt:
+            re_ = rt + 0.05
+        rows.append([w, rt, re_])
+    n = len(rows)
+    last_good = -1
+    for i, (_, rt, re_) in enumerate(rows):
+        if rt < dur - 0.08:
+            last_good = i
+    if last_good < n - 1:                             # tail words past the cut: spread them inside the shot
+        start = max(rows[last_good][2] if last_good >= 0 else 0.0, 0.0)
+        room = max(0.12, dur - start)
+        tail = rows[last_good + 1:]
+        lens = [max(0.08, max(1, len(nz(w)))) for w, _, _ in tail]
+        tot = sum(lens)
+        c = start
+        for k, (w, rt, re_) in enumerate(tail):
+            d = room * lens[k] / tot
+            t_s, t_e = c, min(dur, c + d)
+            if t_s >= dur - 0.04:
+                t_s = dur - 0.04 * (len(tail) - k)
+            if t_e <= t_s:
+                t_e = min(dur, t_s + 0.05)
+            rows[last_good + 1 + k] = [w, t_s, t_e]
+            c = t_e
+    if rows and 0.0 < rows[0][1] <= 0.35:             # first word on screen from frame 0
+        rows[0][1] = 0.0
+        if rows[0][2] <= rows[0][1]:
+            rows[0][2] = min(dur, 0.05)
+    out = []
+    for i, (w, rt, re_) in enumerate(rows):
+        rt = max(0.0, rt)
+        re_ = min(dur, max(rt + 0.04, re_))
+        if rt >= dur:
+            rt = max(0.0, dur - 0.08 * (n - i))
+            re_ = min(dur, rt + 0.08)
+        if rt >= re_:
+            rt = max(0.0, re_ - 0.05)
+        rt = max(0.0, rt)                             # never negative
+        re_ = min(dur, max(rt + 0.04, re_))
+        if rt >= re_:
+            rt = max(0.0, re_ - 0.04)
+        out.append({"w": w, "t": round(rt, 3), "e": round(re_, 3)})
+    for i in range(1, len(out)):
+        if out[i]["t"] < out[i - 1]["t"]:
+            out[i]["t"] = out[i - 1]["t"]
+        if out[i]["e"] <= out[i]["t"]:
+            out[i]["e"] = min(dur, out[i]["t"] + 0.04)
+        if out[i]["e"] > dur:
+            out[i]["e"] = dur
+    return out
+
+
+def page_map(lines):
+    return {wi: ln.get("page", 0) for ln in (lines or []) for wi in ln["words"]}
+
+
+def enforce_min_vis(rows, idx_page, dur, min_vis=MIN_VIS):
+    """Delay later page starts so every word is on screen >= min_vis (t < e <= dur kept). Returns notes."""
+    notes = []
+    n = len(rows)
+    if n == 0:
+        return notes
+    pages, seen = [], set()
+    for wi in range(n):
+        pg = idx_page.get(wi, 0)
+        if pg not in seen:
+            pages.append(pg)
+            seen.add(pg)
+
+    def starts():
+        st = {}
+        for wi, r in enumerate(rows):
+            pg = idx_page.get(wi, 0)
+            st[pg] = min(st.get(pg, 1e9), r["t"])
+        return st
+
+    last = rows[-1]
+    if last["t"] > dur - min_vis:
+        last["t"] = max(0.0, dur - min_vis)
+        if last["e"] <= last["t"]:
+            last["e"] = dur
+        notes.append(f"pulled last word t to {last['t']:.3f}")
+    for _pass in range(6):
+        st = starts()
+        nxt = {pg: (st[pages[k + 1]] if k + 1 < len(pages) else dur) for k, pg in enumerate(pages)}
+        changed = False
+        for k, pg in enumerate(pages[:-1]):
+            next_pg = pages[k + 1]
+            need = 0.0
+            for wi, r in enumerate(rows):
+                if idx_page.get(wi, 0) == pg and nxt[pg] - r["t"] < min_vis - 1e-9:
+                    need = max(need, r["t"] + min_vis)
+            if need > nxt[pg] + 1e-9:
+                delta = need - st[next_pg]
+                later = [wi for wi in range(n) if idx_page.get(wi, 0) in pages[k + 1:]]
+                max_shift = max(0.0, (dur - min_vis) - rows[later[-1]]["t"]) if later else 0.0
+                delta = min(delta, max_shift)
+                if delta > 0.001:
+                    for wi in later:
+                        rows[wi]["t"] = round(min(dur - 0.04, rows[wi]["t"] + delta), 3)
+                        rows[wi]["e"] = round(min(dur, max(rows[wi]["t"] + 0.04, rows[wi]["e"] + delta)), 3)
+                    notes.append(f"delayed page {next_pg} by {delta:.3f}s")
+                    changed = True
+        if not changed:
+            break
+    for r in rows:
+        r["t"] = max(0.0, r["t"])
+        r["e"] = min(dur, max(r["t"] + 0.04, r["e"]))
+        if r["t"] >= r["e"]:
+            r["t"] = max(0.0, r["e"] - 0.04)
+        r["t"], r["e"] = round(r["t"], 3), round(r["e"], 3)
+    return notes
+
+
+def vis_problems(rows, idx_page, dur, min_vis=MIN_VIS):
+    st = {}
+    for wi, r in enumerate(rows):
+        pg = idx_page.get(wi, 0)
+        st[pg] = min(st.get(pg, 1e9), r["t"])
+    pgs = sorted(st, key=lambda p: st[p])
+    nxt = {pg: (st[pgs[k + 1]] if k + 1 < len(pgs) else dur) for k, pg in enumerate(pgs)}
+    bad = []
+    for wi, r in enumerate(rows):
+        vis = nxt.get(idx_page.get(wi, 0), dur) - r["t"]
+        if r["t"] < 0 or r["e"] < 0 or not (r["t"] < r["e"] <= dur + 1e-9) or vis < min_vis - 1e-9:
+            bad.append(f"word {wi} '{r['w']}' t={r['t']} e={r['e']} vis={vis:.3f} dur={dur:.3f}")
+    return bad
+
+
+def time_words(model, ff, src, script, lines, t0, t1, dur):
+    """Padded ASR -> align -> fit_times -> enforce_min_vis. Returns rows, asr words, notes, warnings."""
+    aw = padded_asr(model, ff, src, t0, t1)
+    T = align(script, [w for w in aw], t0, t1)
+    rows = fit_times(script, T, t0, t1, dur)
+    notes = enforce_min_vis(rows, page_map(lines), dur)
+    return rows, aw, notes, edge_warnings(aw, T, t0, t1)
+
+
+def cmd_retime(a) -> None:
+    """Re-time captions of an edited project (after in/out changes, vet --write or frame)."""
+    pp, wp = Path(a.project).resolve(), Path(a.words).resolve()
+    proj, W = _load_json(pp), _load_json(wp)
+    ik = _ik()
+    ff = ik._which("ffmpeg", getattr(a, "ffmpeg", None))
+    src = proj["src"] if os.path.isabs(proj["src"]) else str((pp.parent / proj["src"]).resolve())
+    fps = proj.get("fps", FPS_DEFAULT)
+    want = {int(x) for x in a.shots.split(",")} if a.shots else None
+    model = whisper(a, proj)
+    bak = wp.with_name(wp.stem + ".pre_retime.json")
+    if not bak.exists():
+        shutil.copy2(wp, bak)
+    bad_all = []
+    for s in proj["shots"]:
+        if s.get("kind") != "clip" or (want and s["i"] not in want):
+            continue
+        k = str(s["i"])
+        t0 = float(s["src_in"])
+        t1 = float(s.get("audio_out") or (t0 + s["frames"] / fps))
+        dur = s["frames"] / fps
+        script = [w["w"] for w in W[k]]
+        rows, aw, notes, warns = time_words(model, ff, src, script, s.get("lines"), t0, t1, dur)
+        bad = vis_problems(rows, page_map(s.get("lines")), dur)
+        W[k] = rows
+        print(f"shot {k} {s.get('beat', '')} {t0:.2f}-{t1:.2f} dur {dur:.3f}: " + ("VIS_OK" if not bad else "VIS_PROBLEM")
+              + ("  notes: " + "; ".join(notes) if notes else ""))
+        print("   ", " ".join(f"{r['w']}@{r['t']:.2f}-{r['e']:.2f}" for r in rows))
+        for w_ in warns:
+            print("    WARN", w_)
+        bad_all += [f"shot {k}: {b}" for b in bad]
+    _save_json(wp, W)
+    print("wrote", wp, "(backup", bak.name + ")", "ALL_OK" if not bad_all else "HAS PROBLEMS:\n  " + "\n  ".join(bad_all))
+
+
 def cmd_assemble(a) -> None:
     ik = _ik()
     sp_path = Path(a.sets).resolve()
@@ -243,22 +455,18 @@ def cmd_assemble(a) -> None:
             tk = pc["text"].split()
             starred = [t.startswith("*") for t in tk]
             script = [t.lstrip("*") for t in tk]
-            aw = [dict(w, t=w["t"] + t0, e=w["e"] + t0) for w in asr_words(model, pcm(ff, src_abs, t0, t1))]
-            aw2 = []
-            for w in aw:                                      # merge "24" + "-7"
-                if aw2 and (w["w"].startswith("-") or w["w"].startswith("%")):
-                    aw2[-1]["e"], aw2[-1]["w"] = w["e"], aw2[-1]["w"] + w["w"]
-                else:
-                    aw2.append(w)
-            T = align(script, aw2, t0, t1)
-            rows = [{"w": w, "t": round(max(0.0, s - t0), 3), "e": round(min(t1 - t0, max(s - t0 + 0.04, e - t0)), 3)}
-                    for w, (s, e) in zip(script, T)]
             lines = make_lines(script, starred, P.get("big", 180), P.get("small", 96))
+            # B2 caption timing: padded-span ASR, clamped t/e, tail words redistributed, >= 150 ms on screen
+            rows, aw2, notes, warns = time_words(model, ff, src_abs, script, lines, t0, t1, frames / fps)
+            for w_ in warns:
+                log.append(f"WARN shot {idx} {who} {t0:.2f}-{t1:.2f}: {w_}")
+            if notes:
+                log.append(f"shot {idx} captions: " + "; ".join(notes))
             for pg in sorted({l["page"] for l in lines}):            # every caption page starts with a capital
                 f = min(i for l in lines if l["page"] == pg for i in l["words"])
                 rows[f]["w"] = rows[f]["w"][:1].upper() + rows[f]["w"][1:]
             words[str(idx)] = rows
-            sh = {"i": idx, "kind": "clip", "beat": f"{bi + 1}{'abc'[pi] if len(beat['pieces']) > 1 else ''} {beat['label']}",
+            sh = {"i": idx, "kind": "clip", "beat": f"{bi + 1}{'abcdefghij'[pi] if len(beat['pieces']) > 1 else ''} {beat['label']}",
                   "who": who, "src_in": t0, "frames": frames, "audio_out": t1, "fade_out_ms": pc.get("fade_ms", 25),
                   "speaker": "guest" if who == "guest" else "host", "cy": 540,
                   "side": P.get("side", "left"), "maxw": P.get("maxw", 900), "lines": lines}
@@ -274,17 +482,30 @@ def cmd_assemble(a) -> None:
             idx += 1
         shots.append({"i": idx, "kind": "black", "frames": SP.get("dip_frames", 10)})
         idx += 1
-    shots[-1]["frames"] = SP.get("final_black_frames", 15)    # the last black lets the last word finish clean
-    shots.append({"i": idx, "kind": "end", "beat": f"{len(beats) + 1} LOGO", "frames": SP.get("end_frames", 81)})
-    endstart = sum(s["frames"] for s in shots[:-1])
+    # B2 default (2026-11-16): NO logo / end card / sting / jingle - music only, 1 s black tail, bed fades from the
+    # end of the last word (introkit end_audio_plan, no_logo). sets.json "end_card": true brings the old end back.
+    end_card = bool(SP.get("end_card", False))
+    if end_card:
+        shots[-1]["frames"] = SP.get("final_black_frames", 15)    # the last black lets the last word finish clean
+        shots.append({"i": idx, "kind": "end", "beat": f"{len(beats) + 1} LOGO", "frames": SP.get("end_frames", 81)})
+    else:
+        shots[-1]["frames"] = SP.get("final_black_frames", 30)
+    endstart = sum(s["frames"] for s in (shots[:-1] if end_card else shots))
     base = {"fps": fps, "width": 1920, "height": 1080, "crop": {"w": 1296, "h": 729, "y": 0},
             "grade": "unsharp=5:5:0.45,eq=contrast=1.07:saturation=1.05:brightness=0.004:gamma=0.98,vignette=PI/5",
             "fonts": {"anton": "Anton-Regular.ttf", "playfair": "PlayfairDisplay-Italic.ttf", "barlow": "BarlowCondensed-Bold.ttf"},
             "sfx": {"boom_format": "s16le", "tape_format": "s16le", "sting_format": "s16le"},
             "layout": "side", "device": "auto", "hwaccel": "auto"}
     proj = dict(base, **SP.get("project", {}))
-    proj["sfx"] = dict(base["sfx"], **proj.get("sfx", {}), sting_at=round(endstart / fps + 0.07, 3))
-    proj.update(name=f"{SP['prefix']}_{a.set_name}", src=src_abs, cards=SP["cards"], shots=shots)
+    if end_card:
+        proj["sfx"] = dict(base["sfx"], **proj.get("sfx", {}), sting_at=round(endstart / fps + 0.07, 3))
+        name = f"{SP['prefix']}_{a.set_name}"
+    else:
+        proj["sfx"] = dict(base["sfx"], **proj.get("sfx", {}), sting=None)
+        proj["sfx"].pop("sting_at", None)
+        proj["no_logo"] = True
+        name = f"{SP['prefix']}_{a.set_name}{SP.get('name_suffix', '_original')}"
+    proj.update(name=name, src=src_abs, cards=SP["cards"], shots=shots)
     if final_dir is not None:
         proj["out_dir"] = str(final_dir)
     for k in ("avoid", "speakers", "allow_top_touch", "frame_bounds"):
@@ -294,7 +515,8 @@ def cmd_assemble(a) -> None:
     _save_json(pp, proj)
     _save_json(wp, words)
     total = sum(s["frames"] for s in shots)
-    log.append(f"total {total}f = {total / fps:.3f}s  sting_at {proj['sfx']['sting_at']}  (music fade / duck: automatic at build)")
+    log.append(f"total {total}f = {total / fps:.3f}s  sting_at {proj['sfx'].get('sting_at')}  no_logo {bool(proj.get('no_logo'))}"
+               "  (music fade / duck: automatic at build)")
     (out_dir / f"assemble_{a.set_name}.txt").write_text("\n".join(log), encoding="utf-8")
     print("\n".join(log))
     print("wrote", pp, wp, "\nnext: introkit vet --project", pp, "--words", wp, "--write ; then frame ; build ; qc")
@@ -615,7 +837,9 @@ def measure_end(ff, src, s, last_w, next_clip_in, model, tail=0.15, fade_ms=25, 
     if not allow_shorten and new < out0:
         new = out0 if (nxt_on is None or out0 <= nxt_on - 0.02) else new
     new = round(new, 2)
-    fade = fade_ms if new - aend >= 0.05 else max(10, min(fade_ms, 20))
+    # B2 fade rule: the end fade starts only AFTER the last word has fully ended (never inside the word);
+    # if the cut sits right on the acoustic end the fade shrinks (8 ms floor) instead of eating the word.
+    fade = int(min(fade_ms, max(8, round((new - aend) * 1000))))
     lv = lambda t: float(np.mean(e[max(0, I(t) - 1):I(t) + 2])) if 0 <= I(t) < len(e) else floor  # noqa: E731
     return {"floor": round(floor, 1), "asr_end": round(asr_end, 3) if asr_end else None, "acoustic_end": round(aend, 3),
             "next_onset": round(nxt_on, 3) if nxt_on else None, "next_word": round(nxt_asr, 3) if nxt_asr else None,
@@ -793,6 +1017,14 @@ def fix_end_timeline(proj, log=None, final_black=15):
     if len(sh) >= 2 and sh[-1]["kind"] == "end" and sh[-2]["kind"] == "black" and sh[-2]["frames"] < final_black:
         log.append(f"final black {sh[-2]['frames']} -> {final_black} f")
         sh[-2]["frames"] = final_black
+    if sh and sh[-1]["kind"] != "end" and proj.get("no_logo"):
+        if sh[-1]["kind"] == "black" and sh[-1]["frames"] < 30:
+            log.append(f"final black {sh[-1]['frames']} -> 30 f (1 s tail)")
+            sh[-1]["frames"] = 30
+        proj.pop("music_fade_out", None)
+        proj.pop("duck_hold", None)
+        mf, dh = _ik().end_audio_plan(proj)
+        log.append(f"no logo; music fade {mf}; duck hold {dh} (automatic at build)")
     if sh and sh[-1]["kind"] == "end":
         sting = round(sum(x["frames"] for x in sh[:-1]) / fps + 0.07, 3)
         proj.setdefault("sfx", {})["sting_at"] = sting
@@ -801,6 +1033,75 @@ def fix_end_timeline(proj, log=None, final_black=15):
         mf, dh = _ik().end_audio_plan(proj)
         log.append(f"sting_at {sting}; music fade {mf}; duck hold {dh} (automatic at build)")
     return log
+
+
+# ======================================================================= edges (post-build, B2)
+
+FILLER_RE = re.compile(r"^(um+|uh+|uhm|hmm+|er+|ah+|mm+)[,.]?$", re.I)
+
+
+def cmd_edges(a) -> None:
+    """Edge ASR on the delivered mp4 (B2 workflow): per clip, Whisper on the whole line (VAD off and on) and on
+    the first / last 1.2 s; flags FIRST / LAST (edge word not heard as scripted), FILLER, DIFF (script vs heard),
+    FADE (end fade starts before the acoustic end of the last word, measured on the source)."""
+    ik = _ik()
+    pp, wp, final = Path(a.project).resolve(), Path(a.words).resolve(), Path(a.final).resolve()
+    proj, W = _load_json(pp), _load_json(wp)
+    ff = ik._which("ffmpeg", getattr(a, "ffmpeg", None))
+    src = proj["src"] if os.path.isabs(proj["src"]) else str((pp.parent / proj["src"]).resolve())
+    model = whisper(a, proj)
+    rep_, flagged = [], []
+    tl = ik.timeline(proj)
+    for k, (s, t0, t1) in enumerate(tl):
+        if s["kind"] != "clip":
+            continue
+        i = str(s["i"])
+        d = t1 - t0
+        aud = float(s.get("audio_out") or (s["src_in"] + d)) - float(s["src_in"])
+        script = [w["w"].replace("*", "") for w in W.get(i, [])]
+        full = pcm(ff, str(final), t0, t1)
+        A = asr_words(model, full)
+        AV = asr_words(model, full, vad=True)
+        Ain = asr_words(model, pcm(ff, str(final), t0, t0 + min(1.2, d)))
+        w0 = max(0.0, d - 1.3)
+        Ao = asr_words(model, pcm(ff, str(final), t0 + w0, t1))
+        heard = [x["w"] for x in A]
+        sw, hw = [nz(x) for x in script], [nz(x) for x in heard]
+        fl = []
+        if not hw or not sw or hw[0] != sw[0]:
+            fl.append("FIRST")
+        if not hw or not sw or hw[-1] != sw[-1]:
+            fl.append("LAST")
+        fills = sorted({x["w"] for x in A + AV if FILLER_RE.match(x["w"])})
+        if fills:
+            fl.append("FILLER")
+        missing, extra = [x for x in sw if x not in hw], [x for x in hw if x not in sw]
+        if missing or extra:
+            fl.append("DIFF")
+        fade_ms = int(s.get("fade_out_ms", proj.get("speech_fade_ms", 25)))
+        nxt = next((x for x, _, _ in tl[k + 1:] if x["kind"] == "clip"), None)
+        me = measure_end(ff, src, s, script[-1] if script else "", float(nxt["src_in"]) if nxt and is_join(proj["shots"], k + 1) else None, model)
+        out_src = float(s.get("audio_out") or 0)
+        fade_start = out_src - fade_ms / 1000
+        runon = me["acoustic_end"] > out_src + 0.02     # next word runs straight on: the cut is a dip, not an end
+        if script and not runon and fade_start < me["acoustic_end"] - 0.01:
+            fl.append("FADE")
+        r = {"shot": s["i"], "beat": s.get("beat"), "who": s.get("who"), "tl": [round(t0, 3), round(t1, 3)],
+             "script": " ".join(script), "heard": " ".join(heard), "in": " ".join(x["w"] for x in Ain),
+             "out": " ".join(x["w"] for x in Ao), "fillers": fills, "missing": missing, "extra": extra,
+             "fade_start_src": round(fade_start, 3), "acoustic_end_src": me["acoustic_end"], "run_on": runon, "flags": fl}
+        rep_.append(r)
+        if fl:
+            flagged.append((s["i"], fl))
+        print(f"shot {s['i']:>2} {s.get('beat', '')}: {'FLAGS ' + ','.join(fl) if fl else 'OK'}")
+        print(f"    script: {r['script']}\n    heard : {r['heard']}\n    IN    : {r['in']}\n    OUT   : {r['out']}")
+        print(f"    fade starts {fade_start:.3f}s src, last word ends {me['acoustic_end']:.3f}s src"
+              + ("  (run-on: next word follows with no pause; cut sits in the dip, listen)" if runon else ""))
+    out = Path(a.out) if a.out else pp.with_name(final.stem + "_edges.json")
+    _save_json(out, {"final": str(final), "shots": rep_, "flagged": flagged})
+    print(f"edges: {len(flagged)} flagged {flagged} -> {out}")
+    if flagged:
+        sys.exit(1)
 
 
 # ======================================================================= qc (post-build)
