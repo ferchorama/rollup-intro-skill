@@ -17,6 +17,9 @@ Stages (all re-runnable, OS-agnostic: Windows, macOS Intel/Apple Silicon, Linux)
                 talking-face pick when two people share a frame
     build       picture -> graphics -> audio -> mux (SAR 1:1, bt709, AAC remaster, faststart);
                 optional Real-ESRGAN upscale of zoomed shots (--upscale / --no-upscale)
+    setup       install or repair the full environment (uv, Python, packages, PyTorch,
+                ffmpeg, Whisper, Real-ESRGAN). Runs automatically when something is missing
+    upscale     self-check the Real-ESRGAN stack (torch, weights, one test inference)
     fetch-upscale-model  download Real-ESRGAN general-x4v3 weights into the env folder
     preview     small H.264 review copy (NVENC / VideoToolbox if present, else libx264)
     qc          four decisive gates in one run (format, audio, framing, speech) + contact sheet, plus an
@@ -137,7 +140,7 @@ def _which(name: str, override: str | None = None) -> str:
             if cand.stem == name:
                 return str(cand)
         sys.exit(f"[introkit] {name} not found on PATH or in {env_home() / 'tools' / 'ffmpeg' / 'bin'}; "
-                 f"run setup (see TOOLS.md) or pass --{name} explicitly")
+                 f"run `python scripts/introkit.py setup` (or setup.ps1 / setup.sh) or pass --{name}")
     return found
 
 
@@ -2433,7 +2436,7 @@ def cmd_env(a) -> None:
             print(f"{name:13} {e}")
     for pkg in ("faster-whisper", "ctranslate2", "av", "numpy", "pillow", "opencv-python-headless",
                 "onnxruntime", "onnxruntime-gpu", "onnxruntime-openvino", "onnxruntime-directml",
-                "psutil", "nvidia-cublas-cu12", "nvidia-cudnn-cu12"):
+                "psutil", "torch", "nvidia-cublas-cu12", "nvidia-cudnn-cu12"):
         try:
             print(f"  {pkg:24} {im.version(pkg)}")
         except im.PackageNotFoundError:
@@ -2735,6 +2738,27 @@ def cmd_metrics(a) -> None:
 
 def main(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
+    wants_help = any(a in ("-h", "--help") for a in argv)
+    # Explicit setup runs even when the env is missing (and does not reexec first).
+    if argv[:1] == ["setup"]:
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        import setupkit
+        sys.exit(setupkit.cmd_setup(argv[1:]))
+    if argv[:1] == ["upscale"] and not wants_help:
+        # Self-check may need the env first; auto-setup then reexec, then run the check.
+        if not os.environ.get("INTROKIT_NO_SETUP"):
+            sys.path.insert(0, str(Path(__file__).resolve().parent))
+            import setupkit
+            setupkit.ensure_setup_auto()
+        _maybe_reexec(argv)
+        _env_setup()
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        import setupkit
+        sys.exit(setupkit.cmd_upscale_check())
+    if (not wants_help) and (not os.environ.get("INTROKIT_NO_SETUP")):
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        import setupkit
+        setupkit.ensure_setup_auto()
     _maybe_reexec(argv)
     _env_setup()
     ap = argparse.ArgumentParser(prog="introkit", description=__doc__,
@@ -2758,6 +2782,11 @@ def main(argv=None):
 
     e = sub.add_parser("env", help="show the tool folder, interpreter, ffmpeg and package versions")
     e.set_defaults(func=cmd_env)
+    su = sub.add_parser("setup", help="install or repair the skill environment (uv, Python, packages, "
+                                      "PyTorch, ffmpeg, Whisper, Real-ESRGAN). Safe to re-run")
+    su.set_defaults(func=lambda a: sys.exit(__import__("setupkit").cmd_setup()))
+    up = sub.add_parser("upscale", help="self-check the Real-ESRGAN upscale stack (torch, weights, one test inference)")
+    up.set_defaults(func=lambda a: sys.exit(__import__("setupkit").cmd_upscale_check(a)))
     m = sub.add_parser("fetch-model", help=f"download Whisper {WHISPER_MODEL} into the tool folder")
     fu = sub.add_parser("fetch-upscale-model", help="download Real-ESRGAN general-x4v3 weights into the env folder")
     fu.set_defaults(func=lambda a: (__import__("upscale").cmd_fetch_upscale(a)))

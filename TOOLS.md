@@ -15,12 +15,13 @@ relative to the skill folder unless marked *example*.
   scripts/speakers.py      voiceprints + diarization (ONNX, no account, no token)
   assets/                  music, SFX, logo, fonts (ASSETS.md)
   requirements*.txt        minimum versions; requirements*.lock.txt = pinned, tested set
-  setup.ps1 / setup.sh     build the env folder
+  setup.ps1 / setup.sh     bootstrap uv + venv, then hand off to `introkit setup`
+  scripts/setupkit.py      setup implementation (stdlib; also auto-runs when pieces are missing)
   .rollup-intro-env/       created by setup (git-ignored); or $ROLLUP_INTRO_HOME
     uv/                    uv itself, only if it was not already on PATH
     python/                uv-managed CPython 3.11
-    venv/                  all Python packages
-    models/                Whisper large-v3-turbo (~1.6 GB) + speaker model (~27 MB)
+    venv/                  all Python packages, including PyTorch
+    models/                Whisper large-v3-turbo (~1.6 GB), speaker model, Real-ESRGAN weights
     hf/  cache/            Hugging Face + uv caches (kept inside the folder)
     tools/ffmpeg/          portable ffmpeg, only if none was found
 ```
@@ -29,18 +30,27 @@ relative to the skill folder unless marked *example*.
 |---|---|
 | Windows (PowerShell 5.1 or 7) | `powershell -ExecutionPolicy Bypass -File .\setup.ps1` |
 | macOS (Intel or Apple Silicon) / Linux | `bash ./setup.sh` |
+| Any OS with Python 3.9+ already there | `python scripts/introkit.py setup` |
 
-Options: `-EnvHome D:\x` / `--home /x` (or set `ROLLUP_INTRO_HOME`) to put the folder
-elsewhere; `-Cuda yes|no|auto` / `--cuda`; `-Ffmpeg portable|skip|auto` / `--ffmpeg`;
+`introkit setup` is the single entry point (the shell scripts only bootstrap uv + a venv,
+then hand off). Any other introkit command runs setup automatically the first time something
+is missing (`INTROKIT_NO_SETUP=1` disables that). `introkit upscale` self-checks torch, the
+weights, and one test inference.
+
+Options: `-EnvHome D:\x` / `--home /x` / `introkit` respects `ROLLUP_INTRO_HOME`;
+`-Cuda yes|no|auto` / `--cuda`; `-Ffmpeg portable|skip|auto` / `--ffmpeg`;
 `-SkipModel` / `--skip-model` (download models later with `introkit.py fetch-model`);
 `-Unlocked` / `--unlocked` to install from the minimum-version files instead of the locks.
 
 What setup does: uses `uv` if on PATH, else installs it into `<env>/uv` without touching
 your PATH; installs a uv-managed Python 3.11 into `<env>/python`; creates `<env>/venv`;
-installs `requirements.lock.txt` (plus `requirements-cuda.lock.txt` when `nvidia-smi -L`
-works on Windows/Linux: CUDA 12 cuBLAS + cuDNN 9 wheels, no system CUDA needed); finds or
-installs ffmpeg; downloads the models; prints `introkit.py env` and `introkit.py hw`.
-After setup the skill runs **offline**. Uninstall = delete the env folder.
+installs `requirements.lock.txt` (plus `requirements-cuda.lock.txt` when `nvidia-smi`
+works on Windows/Linux: CUDA 12 cuBLAS + cuDNN 9 wheels, no system CUDA needed); installs
+**PyTorch** (official CUDA wheel matching the driver, else the CPU build); finds or
+installs ffmpeg (portable copy into the env folder, then winget / brew / apt); downloads
+Whisper `large-v3-turbo` and the Real-ESRGAN general-x4v3 weights; skips anything already
+present; prints a summary. Zoomed-shot upscaling is on by default afterwards. After setup
+the skill runs **offline**. Uninstall = delete the env folder.
 
 `introkit.py` can be launched with any Python 3.9+: it re-executes inside `<env>/venv`
 (`INTROKIT_NO_REEXEC=1` disables that). It sets `HF_HOME` inside the env folder and, on
@@ -54,9 +64,9 @@ build, 7.1.5 Debian).
 
 | OS | Install |
 |---|---|
-| Windows | `winget install Gyan.FFmpeg`, or let `setup.ps1` unpack the BtbN win64-gpl build into `<env>/tools/ffmpeg` (`-Ffmpeg portable`) |
-| macOS | `brew install ffmpeg` (Homebrew, Intel or Apple Silicon; `setup.sh` runs it if brew exists) |
-| Linux | `sudo apt install ffmpeg` (or dnf/pacman), or `setup.sh --ffmpeg portable` for the BtbN static build (x86_64 / arm64) |
+| Windows | setup prefers a portable BtbN win64-gpl build in `<env>/tools/ffmpeg`; `winget install Gyan.FFmpeg` is the fallback (`-Ffmpeg portable` forces the portable copy) |
+| macOS | `brew install ffmpeg` (Homebrew, Intel or Apple Silicon; setup runs it if brew exists) |
+| Linux | portable BtbN static build (x86_64 / arm64) into the env folder, or `sudo apt install ffmpeg` (or dnf/pacman) |
 
 | Job | Invocation |
 |---|---|

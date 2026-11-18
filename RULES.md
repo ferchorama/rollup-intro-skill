@@ -179,9 +179,9 @@ replace of the original bumper file).
 ## 037 — Zoomed shots are AI-upscaled (2026-11-18)
 Clip shots whose crop zoom is above 1.15x are upscaled with Real-ESRGAN (realesr-general-x4v3
 blended with wdn-x4v3 at 0.5 denoise): crop the zoomed source region, upscale 4x, then redo
-push, grade and captions. Default at `build` when the optional extras and weights are present
-(CPU fallback if there is no GPU). `--no-upscale` skips it. Audio is stream-copied and verified
-by hash. Dependencies are optional (`requirements-upscale.txt`).
+push, grade and captions. Default at `build` after `introkit setup` (which installs the
+extras and weights). CPU fallback if there is no GPU. `--no-upscale` skips it. Audio is
+stream-copied and verified by hash.
 
 ## 038 — Beat structure is an option; the guest always opens (2026-11-18)
 `assemble --structure guest,andy,robbie,guest` (or `structure` in sets.json) names the expected

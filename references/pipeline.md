@@ -108,8 +108,8 @@ Rules:
   clear of the ON AIR bug, chyron, partner band and ticker.
 - **Face framing comes from `introkit.py frame`, before this stage** (see below). Do not
   hand-tune zoom, and do not add a centre zoom.
-- **Zoomed shots (crop zoom > 1.15x)** are AI-upscaled at `build` when extras + weights are
-  present: crop the source region, Real-ESRGAN x4 at 0.5 denoise, then the same push / grade.
+- **Zoomed shots (crop zoom > 1.15x)** are AI-upscaled at `build` by default after setup:
+  crop the source region, Real-ESRGAN x4 at 0.5 denoise, then the same push / grade.
   `--no-upscale` skips it. Audio is stream-copied and hash-verified.
 - Legacy only: a shot with `"punch"` and no `"push"` still gets the old centre zoompan
   (`zoompan=z='1+P*on/N':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'`). The build warns about it, because a

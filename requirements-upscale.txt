@@ -1,6 +1,4 @@
-# Optional extras: Real-ESRGAN upscale of zoomed shots (introkit build --upscale).
-# Not installed by setup.ps1 / setup.sh. In the skill venv:
-#   uv pip install --python .rollup-intro-env/venv/Scripts/python.exe -r requirements-upscale.txt
-# Then: introkit fetch-upscale-model
+# Upscale extras: Real-ESRGAN zoomed-shot pass. Installed by `introkit setup`
+# (and by setup.ps1 / setup.sh). After setup, upscale is on by default at `build`.
 # GPU (CUDA) is used when torch can see a device; otherwise the upscaler runs on CPU (float32).
 torch>=2.1

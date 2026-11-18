@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-11-18 (self-bootstrapping setup)
+The skill now installs everything a new computer needs, with no prior knowledge of the
+requirements. `introkit setup` (or `setup.ps1` / `setup.sh`) is the single entry point;
+any other introkit command runs setup automatically the first time something is missing.
+Setup installs uv if needed, creates `.rollup-intro-env`, installs all requirements
+including the upscale extras, detects an NVIDIA GPU and installs a matching PyTorch
+CUDA wheel (CPU fallback otherwise), finds or installs ffmpeg/ffprobe, and fetches the
+Whisper large-v3-turbo model and Real-ESRGAN weights. Already-present pieces are skipped
+and a summary is printed. After setup, zoomed-shot upscaling is on by default
+(`introkit upscale` self-checks; `--no-upscale` still skips it).
+
 ## 2026-11-18 (upscale, structure, talking face, B5 endings, stutter energy, 4 s minimum)
 Lessons from the Tristan Thompson intros (including B5 / `_UP`) and Lord Chris Holmes A2 / v3.
 All new code is ours (the Tristan / Chris Holmes work-folder methods, generalised). The four

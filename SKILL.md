@@ -16,11 +16,35 @@ kinetic type and a music bed. Runs on Windows, macOS (Intel and Apple Silicon) a
 
 ## Environment (one folder, set up once per machine)
 
-All tools and Python packages live in ONE folder, `<skill>/.rollup-intro-env` (or
-`$ROLLUP_INTRO_HOME`), built with astral **uv**: `setup.ps1` on Windows, `./setup.sh` on
-macOS/Linux. It holds the uv-managed Python, the venv, Whisper `large-v3-turbo`, the HF cache
-and (if needed) a portable ffmpeg. `introkit.py` re-runs itself inside that venv, so any
-`python` can launch it. Delete the folder to uninstall. Details: `TOOLS.md`.
+On a new computer you need **no prior knowledge of the dependencies**. The skill installs
+everything itself into `<skill>/.rollup-intro-env` (or `$ROLLUP_INTRO_HOME`). Delete that
+folder to uninstall. Details: `TOOLS.md`.
+
+**Do this first** (pick one; all are equivalent):
+
+| OS | Command (run from the skill folder) |
+|---|---|
+| Windows | `powershell -ExecutionPolicy Bypass -File .\setup.ps1` |
+| macOS / Linux | `bash ./setup.sh` |
+| Any OS, if some Python 3.9+ is already there | `python scripts/introkit.py setup` |
+
+Setup is one-time and can take several minutes (it downloads Python, packages, a ~1.6 GB
+Whisper model, PyTorch, and Real-ESRGAN weights). It:
+
+- installs **uv** if it is missing
+- creates the skill venv with a uv-managed Python 3.11 (no system Python is required or touched)
+- installs every Python package, including the upscale extras
+- detects an NVIDIA GPU and installs the matching **PyTorch CUDA** wheel, or the CPU build if
+  there is no GPU (or the CUDA wheel cannot be used)
+- finds **ffmpeg / ffprobe**, or installs them (portable copy into the env folder; winget as a
+  Windows fallback; Homebrew on macOS; apt on Linux)
+- downloads **Whisper large-v3-turbo** and the **Real-ESRGAN** weights
+- skips anything already present and prints a summary
+
+If you skip setup and run any other `introkit` command, it runs setup automatically the first
+time something is missing (`INTROKIT_NO_SETUP=1` disables that). After setup, zoomed-shot
+upscaling is **on by default** (`--no-upscale` to skip). Confirm with `introkit.py upscale`.
+`introkit.py` then re-runs itself inside the venv, so any Python can launch it.
 
 The skill ships its own **music bed, SFX, logo and fonts** in `assets/` (`ASSETS.md`).
 Projects use them unless they override `music`, `sfx.*`, `logo` or `fonts_dir`.
@@ -244,10 +268,9 @@ introkit.py qc  --final F.mp4 --project P.framed.json [--words W.json] [--out qc
    did this for the original spans). Check bed + ducks with `build --audio-only` if in doubt.
 8. **Render** (`references/pipeline.md`): `build` does picture -> graphics -> audio -> mux,
    with SAR 1:1 + bt709 tags, the AAC remaster (-14 LUFS, TP <= -1.1) and faststart built in.
-   Zoomed shots (crop zoom > 1.15x) are AI-upscaled (Real-ESRGAN x4, 0.5 denoise) when the
-   optional extras and weights are present (`requirements-upscale.txt`, `introkit fetch-upscale-model`);
-   `--no-upscale` skips it, `--upscale` requires it. Audio is stream-copied and hash-verified
-   after an upscale build. Review with `introkit.py preview`, never ship the preview.
+   Zoomed shots (crop zoom > 1.15x) are AI-upscaled (Real-ESRGAN x4, 0.5 denoise) **by default**
+   after setup. `--no-upscale` skips it, `--upscale` requires it. Audio is stream-copied and
+   hash-verified after an upscale build. Review with `introkit.py preview`, never ship the preview.
    When stitching the full episode, TheStitcher-V2 always runs with `--no-dynamics`. Use a
    gain-only copy of the subscribe bumper at -14 LUFS, true peak <= -1; never change the
    interview audio.
