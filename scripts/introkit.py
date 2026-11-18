@@ -6,12 +6,18 @@ Stages (all re-runnable, OS-agnostic: Windows, macOS Intel/Apple Silicon, Linux)
     probe       inspect source + reference, report the facts you must match
     transcribe  word-timestamped ASR (faster-whisper; CUDA if present, else CPU int8)
     words       cut per-shot word timings out of a word-level transcript
-    assemble    sets.json (beats -> pieces in/out + script text) -> project + words (script spelling wins)
+    assemble    sets.json (beats -> pieces in/out + script text) -> project + words (script spelling wins);
+                optional --structure guest,andy,robbie,guest; WARNs on beats under 4.0 s
     signals     read-only hook shortlist: one speaker's lines ranked by energy, pause, question, power words, numbers
+                (--min-dur 4.0; short spans are extended to a natural word boundary)
     vet         selection-time checks (cached): stutters, last-word acoustic end (--write fixes outs), dips, headroom,
-                editorial WARNs (weak opener, cut boundary) + the plain script for the stranger test
-    frame       face-safe zoom; --layout side (default): one speaker, face on a third, text opposite
-    build       picture -> graphics -> audio -> mux (SAR 1:1, bt709, AAC remaster, faststart)
+                editorial WARNs (weak opener, cut boundary) + the plain script for the stranger test;
+                --write also applies B5 tight-tail envelopes and energy-detected stutter in-points
+    frame       face-safe zoom; --layout side (default): one speaker, face on a third, text opposite;
+                talking-face pick when two people share a frame
+    build       picture -> graphics -> audio -> mux (SAR 1:1, bt709, AAC remaster, faststart);
+                optional Real-ESRGAN upscale of zoomed shots (--upscale / --no-upscale)
+    fetch-upscale-model  download Real-ESRGAN general-x4v3 weights into the env folder
     preview     small H.264 review copy (NVENC / VideoToolbox if present, else libx264)
     qc          four decisive gates in one run (format, audio, framing, speech) + contact sheet, plus an
                 advisory right-speaker row (mouth motion vs speech; WARN only)
@@ -1162,6 +1168,27 @@ def stage_audio(proj, ff, work: Path, audio_only: bool = False) -> Path:
             dur = s["frames"] / fps
             seg = dec(proj["src"], s["src_in"], dur)[: int(round(dur * SR))]
             seg = np.pad(seg, ((0, int(round(dur * SR)) - len(seg)), (0, 0)))
+            if s.get("tail_env"):  # B5 tight-tail: full volume through the last word, fade the next ~30 ms, room tone
+                env = s["tail_env"]
+                nseg = seg.shape[0]
+                tt = float(s["src_in"]) + np.arange(nseg) / SR
+                g = np.interp(tt, [p[0] for p in env["points"]], [p[1] for p in env["points"]]).astype(np.float32)
+                seg = seg * g[:, None]
+                tn = env.get("tone")
+                if tn and tn.get("src_t") is not None:
+                    room = dec(proj["src"], tn["src_t"], (tn["to"] - tn["from"]) + 0.05)
+                    room = np.array(room, np.float32) * 10 ** (float(tn.get("gain_db", 0)) / 20)
+                    i0 = int(round((tn["from"] - float(s["src_in"])) * SR))
+                    m = min(len(room), nseg - i0, int(round((tn["to"] - tn["from"]) * SR)))
+                    if i0 >= 0 and m > 0:
+                        fi = int(SR * tn.get("fade_ms", 25) / 1000)
+                        w = np.ones(m, np.float32)
+                        if 0 < fi < m:
+                            w[:fi] = np.linspace(0, 1, fi, dtype=np.float32)
+                        elif fi >= m:
+                            w[:] = np.linspace(0, 1, m, dtype=np.float32)
+                        seg[i0:i0 + m] += room[:m] * w[:, None]
+                print(f"[env] shot {s.get('i')} B5 tail envelope at src {s['src_in']:.3f}", flush=True)
             if s.get("audio_out") is not None:  # v2: end dialogue before the frame cut, with an out-fade
                 ke = int(round((s["audio_out"] - s["src_in"]) * SR))
                 nf = int(SR * s.get("fade_out_ms", proj.get("speech_fade_ms", 25)) / 1000)
@@ -1420,6 +1447,12 @@ def stage_mux(proj, ff, work: Path, ovl: Path, audio: Path, out: Path) -> Path:
          "-r", str(fps), "-g", "60", "-movflags", "+faststart",
          *(["-c:a", "copy"] if aac else ["-c:a", "aac", "-b:a", "320k", "-ar", "48000", "-ac", "2"]),
          "-shortest", str(out)])
+    if proj.get("_upscale") and aac:
+        try:
+            import upscale as _up
+            _up.verify_audio_copy(ff, aac, out)
+        except Exception as exc:  # noqa: BLE001 — advisory; never fail the mux
+            print(f"[up] WARN audio hash could not be verified: {exc}", flush=True)
     return out
 
 
@@ -1491,7 +1524,25 @@ def cmd_build(a) -> None:
         print("[introkit] audio (dry run, nothing rendered)")
         stage_audio(proj, ff, work, audio_only=True)
         return
-    print("[introkit] base picture");  stage_base(proj, ff, ffprobe, work)
+    up_mode = False if getattr(a, "no_upscale", False) or proj.get("upscale") is False else (
+        True if getattr(a, "upscale", False) or proj.get("upscale") is True else "auto"
+    )
+    used_upscale = False
+    if up_mode is False:
+        print("[introkit] base picture");  stage_base(proj, ff, ffprobe, work)
+    else:
+        import upscale as _up
+        ok, why = _up.available()
+        if up_mode is True and not ok:
+            sys.exit(f"[up] --upscale requested but {why}")
+        if ok:
+            print("[introkit] base picture (upscale zoomed shots > 1.15x)")
+            _up.stage_base(proj, ff, ffprobe, work, plain=stage_base)
+            used_upscale = True
+        else:
+            print(f"[introkit] base picture (upscale skipped: {why})")
+            stage_base(proj, ff, ffprobe, work)
+    proj["_upscale"] = used_upscale
     print("[introkit] graphics");      ovl = stage_overlay(proj, work, words)
     print("[introkit] audio");         aud = stage_audio(proj, ff, work)
     print("[introkit] mux");           final = stage_mux(proj, ff, work, ovl, aud,
@@ -2708,6 +2759,8 @@ def main(argv=None):
     e = sub.add_parser("env", help="show the tool folder, interpreter, ffmpeg and package versions")
     e.set_defaults(func=cmd_env)
     m = sub.add_parser("fetch-model", help=f"download Whisper {WHISPER_MODEL} into the tool folder")
+    fu = sub.add_parser("fetch-upscale-model", help="download Real-ESRGAN general-x4v3 weights into the env folder")
+    fu.set_defaults(func=lambda a: (__import__("upscale").cmd_fetch_upscale(a)))
     m.set_defaults(func=cmd_fetch_model)
 
     p = sub.add_parser("probe", help="inspect source and reference")
@@ -2769,6 +2822,10 @@ def main(argv=None):
     b.add_argument("--keep-overlay", action="store_true")
     b.add_argument("--audio-only", "--dry-run", dest="audio_only", action="store_true",
                    help="dry run: print bed level, auto-duck and per-shot speech/music gap; render nothing")
+    b.add_argument("--upscale", action="store_true",
+                   help="AI-upscale zoomed shots (Real-ESRGAN x4, zoom > 1.15x). Default: auto when extras + weights are present")
+    b.add_argument("--no-upscale", dest="no_upscale", action="store_true",
+                   help="skip the AI upscale even when extras are installed")
     b.set_defaults(func=cmd_build)
 
     v = dev(sub.add_parser("preview", help="small review copy (not the deliverable)"))
@@ -2831,6 +2888,8 @@ def main(argv=None):
     ab.add_argument("--set", required=True, dest="set_name")
     ab.add_argument("--out", default=None, help="folder for project/words json (default: <out_dir>\\work if "
                                                 "sets.json has out_dir, else <source video folder>\\intros\\work)")
+    ab.add_argument("--structure", default=None,
+                    help="expected beat speakers, comma-separated (guest always first), e.g. guest,andy,robbie,guest")
     ab.set_defaults(func=sk.cmd_assemble)
 
     rt = dev(sub.add_parser("retime", help="B2 caption retime: padded-span ASR (0.5 s before / 0.8 s after), "
@@ -2873,7 +2932,7 @@ def main(argv=None):
     sg.add_argument("--enroll", action="append", default=None,
                     help="NAME=START:DUR voice references when the transcript has no speaker labels (as in diarize)")
     sg.add_argument("--top", type=int, default=12)
-    sg.add_argument("--min-dur", dest="min_dur", type=float, default=3.0)
+    sg.add_argument("--min-dur", dest="min_dur", type=float, default=4.0)
     sg.add_argument("--max-dur", dest="max_dur", type=float, default=10.0)
     sg.add_argument("--start", type=float, default=None, help="only words after this time (s)")
     sg.add_argument("--end", type=float, default=None, help="only words before this time (s)")

@@ -172,7 +172,38 @@ One build, one `qc` + `edges` per file, then report and stop. Fernando does the 
 rebuild loops without his request.
 
 ## 036 — TheStitcher-V2 runs with --no-dynamics
-The interview audio is never changed by the stitcher: always pass `--no-dynamics`.
+The interview audio is never changed by the stitcher: always pass `--no-dynamics`. The subscribe
+bumper is a gain-only copy at -14 LUFS with true peak <= -1 (never a dynamics pass, never a
+replace of the original bumper file).
+
+## 037 — Zoomed shots are AI-upscaled (2026-11-18)
+Clip shots whose crop zoom is above 1.15x are upscaled with Real-ESRGAN (realesr-general-x4v3
+blended with wdn-x4v3 at 0.5 denoise): crop the zoomed source region, upscale 4x, then redo
+push, grade and captions. Default at `build` when the optional extras and weights are present
+(CPU fallback if there is no GPU). `--no-upscale` skips it. Audio is stream-copied and verified
+by hash. Dependencies are optional (`requirements-upscale.txt`).
+
+## 038 — Beat structure is an option; the guest always opens (2026-11-18)
+`assemble --structure guest,andy,robbie,guest` (or `structure` in sets.json) names the expected
+speakers per beat. Beat 1 is still the guest. A mismatch is a WARN, not a refusal.
+
+## 039 — The face on screen is the person speaking (2026-11-18)
+When two people share a frame, pick the face whose mouth motion follows the speech (diarization
+plus a mouth check). The face sits on the side opposite the captions. A mid-shot camera cut is a
+WARN: split the beat so each piece can be framed. Advisory only; the four QC gates are unchanged.
+
+## 040 — Tight next-word endings use the B5 envelope (2026-11-18)
+When the next word follows within ~20 ms, do not cut at the ASR word end. Keep full volume
+through the word's real tail, fade the next word in about 30 ms, and fill with matching room
+tone from the same recording before the final fade.
+
+## 041 — Collapsed ASR repeats are found by energy and cut in the pause (2026-11-18)
+If ASR collapses a repeated phrase (e.g. "do you, do you" heard as one "do you"), detect the
+two bursts on the energy envelope and move the in-point into the pause. `vet --write` applies it.
+
+## 042 — Every beat is at least 4.0 seconds (2026-11-18)
+Every speaker segment or beat must run >= 4.0 s. Reject or extend candidates shorter than that
+to a natural word boundary; never pad with silence. Host lines stay 4-6 s. The check WARNs only.
 
 ## 030 — Self-contained skill
 Everything runs from the skill folder and its env folder: no absolute user paths, no

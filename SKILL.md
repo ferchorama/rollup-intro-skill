@@ -197,6 +197,13 @@ introkit.py qc  --final F.mp4 --project P.framed.json [--words W.json] [--out qc
   allowed only when they are different people. `assemble` refuses a set that breaks this.
 - **Intros always open with the guest, never with a host (user rule, 2026-11-13).** Beat 1
   is the guest hook. `assemble` WARNs if the first beat is not the guest.
+- **Every speaker segment / beat is at least 4.0 s (user rule, 2026-11-18).** Shorter
+  candidates are rejected or extended to a natural word boundary — never padded with silence.
+  Host lines stay 4-6 s. `signals --min-dur` defaults to 4.0; `assemble` / `vet` / `edges`
+  WARN (they never FAIL) on any beat under 4.0 s.
+- **Beat structure is an option** on `assemble --structure guest,andy,robbie,guest` or
+  `structure` in sets.json. The guest still always opens. A mismatch is a WARN, not a refusal
+  (alternation remains a hard refuse). Two-host default example: Guest, Andy, Robbie, Guest.
 
 ## Procedure
 
@@ -217,19 +224,33 @@ introkit.py qc  --final F.mp4 --project P.framed.json [--words W.json] [--out qc
 6. **Assemble and vet.** Write the beats into `<source folder>\intros\work\sets.json`
    (see `references/pipeline.md`) and run `introkit.py assemble --sets sets.json --set A` (project + words, script spelling
    wins), then `introkit.py vet --project project_A.json --words words_A.json --write`.
-   Fix every vet FAIL (stutter / filler / clipped end / no face) by choosing another span
-   BEFORE framing or rendering anything. LISTEN rows: listen to that one cut. Read every
-   `edit:` WARN (weak opener, ends mid-sentence / on a conjunction) and do the **stranger test**
-   on the printed SCRIPT once per set; re-pick spans that fail it.
+   Pass `--structure guest,andy,robbie,guest` (or set it in sets.json) when the episode has
+   two hosts. Fix every vet FAIL (stutter / filler / clipped end / no face) by choosing another
+   span BEFORE framing or rendering anything. LISTEN rows: listen to that one cut. Read every
+   `edit:` WARN (weak opener, ends mid-sentence / on a conjunction, short beat < 4 s, collapsed
+   repeat, tight next-word) and do the **stranger test** on the printed SCRIPT once per set;
+   re-pick or extend spans that fail it. `--write` also applies the B5 tight-tail envelope
+   (full volume through the last word, 30 ms fade of the next word, room tone from the same
+   recording) and, when energy shows a repeated phrase ASR collapsed, moves the in-point into
+   the pause.
 7. **Frame:** `introkit.py frame --project project_A.json` (side layout by default; list
    broadcast furniture as `avoid: [[x,y,w,h],...]`; per-speaker `speakers: {name: {pick,
-   text_side, zoom}}` when two people share a camera). Read `<stem>.framed.frame.txt`.
+   text_side, zoom}}` when two people share a camera). With two faces in frame and no explicit
+   `pick`, `frame` uses a mouth-vs-speech check to put the actual speaker on screen, and keeps
+   that face on the side opposite the captions. A mid-shot camera cut is a WARN: split the beat.
+   Read `<stem>.framed.frame.txt`.
 7b. **Retime captions** after any hand edit of in/out points: `introkit.py retime --project
    project_A.framed.json --words words_A.json` (padded ASR, >= 150 ms per word; `assemble` already
    did this for the original spans). Check bed + ducks with `build --audio-only` if in doubt.
 8. **Render** (`references/pipeline.md`): `build` does picture -> graphics -> audio -> mux,
    with SAR 1:1 + bt709 tags, the AAC remaster (-14 LUFS, TP <= -1.1) and faststart built in.
-   Review with `introkit.py preview`, never ship the preview.
+   Zoomed shots (crop zoom > 1.15x) are AI-upscaled (Real-ESRGAN x4, 0.5 denoise) when the
+   optional extras and weights are present (`requirements-upscale.txt`, `introkit fetch-upscale-model`);
+   `--no-upscale` skips it, `--upscale` requires it. Audio is stream-copied and hash-verified
+   after an upscale build. Review with `introkit.py preview`, never ship the preview.
+   When stitching the full episode, TheStitcher-V2 always runs with `--no-dynamics`. Use a
+   gain-only copy of the subscribe bumper at -14 LUFS, true peak <= -1; never change the
+   interview audio.
 9. **QC once:** `introkit.py qc --final intros/NAME.mp4 --project project_A.framed.json --out
    intros/work/qc_A.json`. Ship only on PASS; look at the contact sheet; listen to LISTEN rows;
    look at any SPEAKER WARN shot (advisory: it never blocks a PASS).
@@ -276,6 +297,11 @@ introkit.py qc  --final F.mp4 --project P.framed.json [--words W.json] [--out qc
   ignores Whisper's next-word start as a limit (only the measured onset of the next sound caps
   it), and when the word runs into the next one cuts at the deepest energy dip. When in doubt,
   check the 10 ms envelope and put the out after the decay/release, not on the ASR word end.
+- **Tight next word (B5, 2026-11-18):** if the next word follows within ~20 ms, a cut at the
+  ASR word end clips the last word (e.g. "crossover" then "you"). Keep full volume through the
+  word's real tail, fade the next word in about 30 ms, and fill with matching room tone from
+  the same recording before the final fade. `vet --write` attaches a `tail_env` on the shot;
+  `edges` WARNs (`TIGHT`) when that envelope is missing. This is a flag, not a QC FAIL.
 - **Per-shot level (2026-11-03):** shot keys `gain_db` (speech gain in dB, applied after the
   global dialogue normalisation) and `duck` (music duck depth 0-1 under that shot, default
   0.72). `build` prints `level shot N: speech X dB, music Y dB, gap Z dB` for every clip; each
@@ -301,7 +327,7 @@ that was used). Never move or overwrite earlier deliverables; a revision is a ne
 
 ## References
 
-- `RULES.md` — running rules 000-036, read first
+- `RULES.md` — running rules 000-042, read first
 - `TOOLS.md` — setup (uv, one folder), ffmpeg per OS, hardware tiers, CPU costs
 - `ASSETS.md` — bundled music, SFX, logo, fonts; provenance
 - `references/line-selection.md` — what makes a line usable, hook compliance, out-points

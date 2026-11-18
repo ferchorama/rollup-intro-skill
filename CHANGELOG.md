@@ -1,5 +1,33 @@
 # Changelog
 
+## 2026-11-18 (upscale, structure, talking face, B5 endings, stutter energy, 4 s minimum)
+Lessons from the Tristan Thompson intros (including B5 / `_UP`) and Lord Chris Holmes A2 / v3.
+All new code is ours (the Tristan / Chris Holmes work-folder methods, generalised). The four
+QC pass/fail gates (FORMAT, AUDIO, FRAMING, SPEECH) are unchanged; the new checks only WARN.
+- **Real-ESRGAN upscale of zoomed shots** (`scripts/upscale.py`): crop the zoomed source region,
+  upscale 4x with realesr-general-x4v3 blended with wdn-x4v3 at 0.5 denoise, then redo push,
+  grade and captions. Applied when crop zoom > 1.15x. Default at `build` if optional extras
+  (`requirements-upscale.txt`, torch) and weights (`introkit fetch-upscale-model`) are present;
+  CPU float32 fallback when there is no CUDA; `--upscale` requires it, `--no-upscale` skips it.
+  Audio is stream-copied and verified by MD5 hash after mux.
+- **Beat structure option:** `assemble --structure guest,andy,robbie,guest` or `structure` in
+  sets.json. The guest always opens. A mismatch WARNs; strict alternation is still a refuse.
+- **Right host on screen:** with two faces and no explicit `speakers.*.pick`, `frame` picks the
+  face whose mouth motion follows the speech, and keeps it on the side opposite the captions.
+  Mid-shot camera cuts and a face sitting near the centre are WARNs (split the beat).
+- **B5 word ending:** when the next word follows within ~20 ms, `measure_end` / `vet --write`
+  keep full volume through the last word's real tail, fade the next word in 30 ms, and fill
+  with matching room tone from the same recording (`shot.tail_env`, applied in `stage_audio`).
+  `edges` WARNs `TIGHT` when that envelope is missing (does not fail the run by itself).
+- **Collapsed-repeat stutter:** when ASR hears one copy of a repeated phrase, `vet` detects the
+  two energy bursts and `--write` moves the in-point into the pause (Chris Holmes A2).
+- **4.0 s minimum:** every speaker beat must run >= 4.0 s (host lines still 4-6 s). `signals
+  --min-dur` defaults to 4.0 and extends short candidates to a natural word boundary (never
+  silence). `assemble` / `vet` / `edges` WARN on short beats.
+- **TheStitcher:** RULE 036 now also documents a gain-only subscribe copy at -14 LUFS, TP <= -1,
+  always with `--no-dynamics`.
+- Smoke: `python scripts/test_smoke.py`.
+
 ## 2026-11-16 (B2 house style becomes the default)
 Reference: `K:\Lior Messika\intros\THE_ROLLUP_Lior_Messika_ColdOpen_B2_original.mp4` — Fernando: "from now on you will use the same techniques you applied for that one".
 - **introkit `stage_audio`:** bed RMS target -26 dB (was -20, project `music_rms_db`); per-shot duck depth

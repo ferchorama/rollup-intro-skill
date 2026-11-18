@@ -70,6 +70,14 @@ NOT allowed (put a guest line between the host beats, or drop to hook > host > b
 **Open with the guest (user rule, 2026-11-13):** intros always open with the guest, never
 with a host. Beat 1 is the guest hook. `assemble` WARNs if the first beat is not the guest.
 
+**Minimum duration (user rule, 2026-11-18):** every speaker segment or beat is at least 4.0 s.
+Reject or extend a shorter candidate to a natural word boundary; never pad with silence. Host
+lines stay 4-6 s. `signals --min-dur` defaults to 4.0; `assemble` WARNs on short beats.
+
+**Beat structure (optional, 2026-11-18):** `assemble --structure guest,andy,robbie,guest` (or
+`structure` in sets.json) names the expected speaker of each beat. Guest still opens. A
+mismatch is a WARN; consecutive same-speaker beats are still refused.
+
 ## What makes a hook
 
 **Viral rule (2026-11-16, user rule):** a hook must be provocative, surprising or quotable and

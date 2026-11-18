@@ -220,6 +220,12 @@ not installed by setup. If used: `uv pip install --python <env>/venv pyannote.au
 | huggingface-hub | model download into the env folder |
 | psutil | physical-core count for thread settings |
 
+Optional extras for zoomed-shot upscaling are **not** in this table: install
+`requirements-upscale.txt` (torch) into the same venv and run `introkit fetch-upscale-model`.
+`build` then upscales clip shots zoomed above 1.15x (GPU when CUDA is visible, otherwise CPU).
+`--no-upscale` skips it. Weights live in `.rollup-intro-env/models/upscale/` and are not
+committed.
+
 `ImageFont.truetype(path, size).getbbox(text)` returns the ink box from the top of the layout
 box â€” subtract the ascent when placing on a baseline. Older notes use Haar cascades, which fire on
 microphones, desk edges and logos (filter to `centre_y < 0.68Â·H` and `width â‰¥ 140`), but the

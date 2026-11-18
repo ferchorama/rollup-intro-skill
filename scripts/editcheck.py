@@ -311,6 +311,34 @@ def _trim_span(ws: list, prev_w, next_w):
     return ws[k:j], start_clean, end_clean
 
 
+
+def extend_to_min_dur(ws, i0, i1, min_dur):
+    """Grow a candidate [i0, i1] (inclusive) until its duration is >= min_dur, stopping only
+    on a natural word boundary (terminal punctuation, pause >= 0.35 s, or speaker change).
+    Never pads with silence. Returns the new end index, or None if it cannot reach min_dur."""
+    if not ws or i1 < i0:
+        return None
+    if ws[i1]["e"] - ws[i0]["t"] >= min_dur - 1e-9:
+        return i1
+    spk = ws[i0].get("spk")
+    last_ok = None
+    for j in range(i1 + 1, len(ws)):
+        if spk and ws[j].get("spk") and ws[j]["spk"] != spk:
+            break
+        if ws[j]["t"] - ws[j - 1]["e"] > 0.8:  # a long gap would be silence-padding; stop
+            break
+        reached = ws[j]["e"] - ws[i0]["t"] >= min_dur - 1e-9
+        nxt = ws[j + 1] if j + 1 < len(ws) else None
+        end_ok = _ends_clean(ws[j]) or nxt is None or nxt["t"] - ws[j]["e"] >= 0.35 or (
+            nxt.get("spk") != ws[j].get("spk")
+        )
+        if reached and end_ok:
+            return j
+        if reached:
+            last_ok = j
+    return last_ok
+
+
 def _score_span(ws, env, ref, prev_e, lens, start_clean=True, end_clean=True):
     import numpy as np
     t0, t1 = ws[0]["t"], ws[-1]["e"]
@@ -402,7 +430,19 @@ def cmd_signals(a) -> None:
             if dur > a.max_dur:
                 break
             if dur < a.min_dur:
-                continue
+                # Extend to a natural word boundary to reach the 4 s minimum; never pad silence.
+                ks, ke = pos[id(tw[0])], pos[id(tw[-1])]
+                knew = extend_to_min_dur(ws, ks, ke, a.min_dur)
+                if knew is None:
+                    continue
+                tw = ws[ks:knew + 1]
+                dur = tw[-1]["e"] - tw[0]["t"]
+                if dur < a.min_dur or dur > a.max_dur:
+                    continue
+                nxt = ws[knew + 1] if knew + 1 < len(ws) else None
+                ec_ = _ends_clean(tw[-1]) or nxt is None or nxt["t"] - tw[-1]["e"] >= 0.35 or (
+                    nxt.get("spk") != tw[-1].get("spk")
+                )
             spk = None
             if labelled:
                 lab = [w["spk"] for w in tw if w["spk"]]

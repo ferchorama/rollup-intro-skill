@@ -46,6 +46,247 @@ END_OK, END_FAIL = 0.04, -0.15     # out-point vs measured acoustic end of the l
                                    # 26 approved vs pre-fix outs, session 2026-11-02: see LESSONS_LEARNED)
 
 
+MIN_BEAT_S = 4.0                   # every speaker beat / segment must run at least this long (2026-11-18)
+HOST_LINE_MAX_S = 6.0              # host lines stay 4-6 s
+TIGHT_NEXT_S = 0.020               # next word within this of the last word's end: ASR end would clip it
+NEXT_FADE_S = 0.030                # B5: fade the next word quickly
+TONE_AFTER_S = 0.120               # B5: room tone after that fade, before the final speech fade
+STUTTER_V = "v-tail-stutter-1"     # busts vet_cache after the energy-repeat / tight-tail checks landed
+
+
+def beat_spoken_s(pieces) -> float:
+    """Spoken duration of a beat: sum of piece (out - in). Black dips between beats do not count."""
+    return sum(max(0.0, float(p["out"]) - float(p["in"])) for p in (pieces or []))
+
+
+def duration_flags(beats) -> list:
+    """Advisory WARNs for beats under 4.0 s, and host lines over 6.0 s. Never a FAIL."""
+    flags = []
+    for i, b in enumerate(beats or [], 1):
+        dur = beat_spoken_s(b.get("pieces") or [])
+        who = (b.get("who") or "").lower()
+        if dur + 1e-9 < MIN_BEAT_S:
+            flags.append(
+                f"WARN beat {i} ({who or '?'}) is {dur:.2f} s < {MIN_BEAT_S:.1f} s minimum "
+                "(extend to a natural word boundary, never pad with silence)"
+            )
+        if who and who != "guest" and dur > HOST_LINE_MAX_S + 1e-9:
+            flags.append(
+                f"WARN beat {i} ({who}) is {dur:.2f} s > {HOST_LINE_MAX_S:.1f} s host-line cap"
+            )
+    return flags
+
+
+def shots_beat_duration_flags(shots) -> list:
+    """Same 4.0 s check, grouped by beat on an assembled project (vet / edges). Advisory only."""
+    groups = []
+    cur, key = [], None
+    for s in shots or []:
+        if s.get("kind") != "clip":
+            continue
+        bk = str(s.get("beat") or s.get("i") or "")
+        head = bk.split()[0] if bk else str(s.get("i"))
+        num = "".join(ch for ch in head if ch.isdigit()) or head
+        if key is None:
+            key = num
+        if num != key:
+            if cur:
+                groups.append((key, cur))
+            cur, key = [s], num
+        else:
+            cur.append(s)
+    if cur:
+        groups.append((key, cur))
+    flags = []
+    for num, ss in groups:
+        dur = sum(max(0.0, float(s.get("audio_out", s["src_in"])) - float(s["src_in"])) for s in ss)
+        who = (ss[0].get("who") or "").lower()
+        if dur + 1e-9 < MIN_BEAT_S:
+            flags.append(
+                f"WARN beat {num} ({who or '?'}) is {dur:.2f} s < {MIN_BEAT_S:.1f} s minimum"
+            )
+        if who and who != "guest" and dur > HOST_LINE_MAX_S + 1e-9:
+            flags.append(
+                f"WARN beat {num} ({who}) is {dur:.2f} s > {HOST_LINE_MAX_S:.1f} s host-line cap"
+            )
+    return flags
+
+
+def parse_structure(value) -> list:
+    if not value:
+        return []
+    if isinstance(value, str):
+        return [p.strip().lower() for p in value.split(",") if p.strip()]
+    return [str(p).strip().lower() for p in value if str(p).strip()]
+
+
+def structure_flags(beats, structure) -> list:
+    """Advisory WARNs when a set does not follow the requested beat structure. Guest must open."""
+    want = parse_structure(structure)
+    flags = []
+    if not want:
+        return flags
+    if want[0] != "guest":
+        flags.append("WARN structure must open with the guest (intros always open with the guest)")
+    got = [(b.get("who") or "").lower() for b in (beats or [])]
+    if got != want:
+        flags.append(
+            f"WARN beat structure is {' / '.join(got) or '(empty)'}, expected {' / '.join(want)}"
+        )
+    return flags
+
+
+def plan_tight_tail(aend, nxt_asr, nxt_on, out0, fade_ms=25, full_until=None):
+    """B5 ending: when the next word follows within TIGHT_NEXT_S of the last word's end,
+    cutting at the ASR / dip end clips the word. Keep full volume through the real tail,
+    fade the next word in NEXT_FADE_S, then hold room tone until out_new.
+
+    Returns a plan dict, or None when the gap is wide enough for a normal cut.
+    Room-tone src_t is filled later (find_room_tone)."""
+    if aend is None:
+        return None
+    cands = [t for t in (nxt_asr, nxt_on) if t is not None]
+    if not cands:
+        return None
+    next_t = min(cands)
+    gap = next_t - aend
+    asr_gap = (nxt_asr - aend) if nxt_asr is not None else None
+    tight = (gap <= TIGHT_NEXT_S) or (asr_gap is not None and asr_gap <= TIGHT_NEXT_S) or (nxt_asr is not None and aend >= nxt_asr - TIGHT_NEXT_S)
+    if not tight:
+        return None
+    full = float(full_until if full_until is not None else aend)
+    fade_end = full + NEXT_FADE_S
+    out_new = round(fade_end + TONE_AFTER_S, 3)
+    if out_new < out0:
+        out_new = round(out0, 3)
+    fade = int(fade_ms) if fade_ms else 25
+    points = [
+        [round(full - 1.0, 3), 1.0],
+        [round(full, 3), 1.0],
+        [round(fade_end, 3), 0.0],
+        [round(out_new + 1.0, 3), 0.0],
+    ]
+    tone = {
+        "from": round(full + 0.005, 3),
+        "to": round(out_new, 3),
+        "gain_db": 0,
+        "fade_ms": 25,
+    }
+    return {
+        "full_until": round(full, 3),
+        "out_new": out_new,
+        "fade_ms": fade,
+        "points": points,
+        "tone": tone,
+        "next_gap_s": round(gap, 4),
+    }
+
+
+def complete_tail_env(plan, src_t):
+    """Attach a room-tone source time (or drop the tone if none was found)."""
+    if not plan:
+        return None
+    env = {"points": plan["points"], "tone": dict(plan["tone"]) if plan.get("tone") else None}
+    if env["tone"] is not None:
+        if src_t is None:
+            env["tone"] = None
+        else:
+            env["tone"]["src_t"] = round(float(src_t), 3)
+    return env
+
+
+def find_room_tone_in_env(e, t0, hop, need_s, floor):
+    """Quiet window of length need_s in a dB envelope. Returns start time or None."""
+    import numpy as np
+    if e is None or len(e) == 0 or need_s <= 0:
+        return None
+    need_n = max(1, int(round(need_s / hop)))
+    if len(e) < need_n:
+        return None
+    cap = floor + 4.0
+    for i in range(0, len(e) - need_n + 1):
+        if float(np.max(e[i:i + need_n])) <= cap:
+            return t0 + i * hop
+    return None
+
+
+def find_room_tone(ff, src, need_s, avoid, sr=16000):
+    """A matching quiet stretch in the same recording, not overlapping `avoid` [(t0, t1), ...]."""
+    import numpy as np
+    hop = 0.01
+    spans = []
+    for a0, a1 in avoid or []:
+        spans.append((float(a1) + 0.3, float(a1) + 0.3 + max(3.0, need_s + 1.0)))
+        if float(a0) > 0.3:
+            spans.append((max(0.0, float(a0) - 3.0), float(a0) - 0.2))
+    for t0, t1 in spans:
+        if t1 - t0 < need_s:
+            continue
+        try:
+            x = pcm(ff, src, t0, t1, sr=sr)
+        except Exception:
+            continue
+        if x is None or len(x) < int(need_s * sr):
+            continue
+        env = env_db(x, sr=sr, ms=int(hop * 1000))
+        floor = float(np.percentile(env, 8)) if len(env) else -70.0
+        hit = find_room_tone_in_env(env, t0, hop, need_s, floor)
+        if hit is not None:
+            return hit
+    return None
+
+
+def detect_collapsed_repeat(e, t0, hop, floor, src_in, asr_repeat=False):
+    """Energy-based stutter detector for the case ASR collapsed a repeated phrase
+    (Chris Holmes A2: 'do you, do you' heard as one 'do you').
+
+    Looks for two similar short bursts with a micro-pause near the in-point.
+    Returns a plan with in_new sitting in the pause (~70 ms before the second burst),
+    or None. `asr_repeat` already flagged by the word-diff path: leave it alone."""
+    import numpy as np
+    if asr_repeat or e is None or len(e) < 8:
+        return None
+    speech = np.asarray(e) > (floor + 12)
+    runs = []
+    i, n = 0, len(speech)
+    while i < n:
+        if speech[i]:
+            j = i
+            while j < n and speech[j]:
+                j += 1
+            runs.append((t0 + i * hop, t0 + j * hop))
+            i = j
+        else:
+            i += 1
+    near = [r for r in runs if r[1] > src_in - 0.05 and r[0] < src_in + 0.8]
+    for (a0, a1), (b0, b1) in zip(near, near[1:]):
+        d1, d2, pause = a1 - a0, b1 - b0, b0 - a1
+        if not (0.08 <= d1 <= 0.40 and 0.08 <= d2 <= 0.40):
+            continue
+        if not (0.04 <= pause <= 0.25):
+            continue
+        if not (0.55 <= (d1 / d2) <= 1.8):
+            continue
+        if abs(a0 - src_in) > 0.25 and a0 < src_in - 0.05:
+            continue
+        in_new = round(min(max(a1 + 0.02, b0 - 0.07), b0 - 0.01), 3)
+        return {
+            "first": (round(a0, 3), round(a1, 3)),
+            "pause": (round(a1, 3), round(b0, 3)),
+            "second": (round(b0, 3), round(b1, 3)),
+            "in_new": in_new,
+        }
+    return None
+
+
+def face_pick_disagrees(picked_cx, talking_cx, tol=80) -> bool:
+    """True when the framed face centre is far from the talking-face centre (source px)."""
+    if picked_cx is None or talking_cx is None:
+        return False
+    return abs(float(picked_cx) - float(talking_cx)) > tol
+
+
+
 def end_grade(out: float, aend: float, asr_end: float | None = None) -> str:
     """OK / LISTEN / FAIL from the measured acoustic end only. Whisper's word end is NOT used: it is
     often 50-400 ms early (the cause of the clipped last words) and sometimes late (false alarms)."""
@@ -424,6 +665,9 @@ def cmd_assemble(a) -> None:
     if beats and (beats[0].get("who") or "").lower() != "guest":
         print(f"assemble: WARN set {a.set_name}: beat 1 is '{beats[0].get('who')}', not the guest "
               "- intros always open with the guest, never with a host")
+    structure = getattr(a, "structure", None) or SP.get("structure")
+    for w in structure_flags(beats, structure) + duration_flags(beats):
+        print(f"assemble: {w}")
     # 2026-11-03 (user rule): never two consecutive beats by the same speaker. With one host + the
     # guest that means strict guest/host/guest/host... alternation; with two hosts, host>host is fine
     # only when they are different people.
@@ -508,9 +752,11 @@ def cmd_assemble(a) -> None:
     proj.update(name=name, src=src_abs, cards=SP["cards"], shots=shots)
     if final_dir is not None:
         proj["out_dir"] = str(final_dir)
-    for k in ("avoid", "speakers", "allow_top_touch", "frame_bounds"):
+    for k in ("avoid", "speakers", "allow_top_touch", "frame_bounds", "structure", "upscale"):
         if k in SP:
             proj[k] = SP[k]
+    if structure:
+        proj["structure"] = parse_structure(structure)
     pp, wp = out_dir / f"project_{a.set_name}.json", out_dir / f"words_{a.set_name}.json"
     _save_json(pp, proj)
     _save_json(wp, words)
@@ -548,6 +794,111 @@ def _scan_shot(ff, src, t_in, dur, wh, sfps, plan, det):
     return rows
 
 
+
+def talking_face_analysis(ff, src, s, SW, SH, fps=30):
+    """Mouth-motion vs speech correlation and camera-cut scan (Tristan A2 method).
+
+    When two people share a frame, the talking face is the one whose mouth motion
+    tracks the speech envelope (Pearson r). Camera cuts mid-shot are listed so the
+    beat can be split and each piece framed. Returns a dict or None. Advisory: the
+    four QC gates are unchanged."""
+    import cv2
+    import numpy as np
+    ik = _ik()
+    a0 = float(s["src_in"])
+    dur = float(s["frames"]) / float(fps or 30)
+    if dur < 0.2:
+        return None
+    W, H = 960, 540
+    sx, sy = W / float(SW), H / float(SH)
+    det = cv2.FaceDetectorYN.create(str(ik.YUNET_MODEL), "", (W, H), 0.6, 0.3, 5000)
+    # Picture + mono 16 kHz audio, accurate preroll seek (same idea as spk2.py).
+    pre = max(0.0, a0 - 1.0)
+    raw = subprocess.run(
+        [ff, "-v", "error", "-ss", f"{pre:.3f}", "-i", src, "-ss", f"{a0 - pre:.3f}",
+         "-t", f"{dur:.3f}", "-vf", f"scale={W}:{H}", "-f", "rawvideo", "-pix_fmt", "bgr24", "-"],
+        capture_output=True,
+    ).stdout
+    n = len(raw) // (W * H * 3)
+    if n < 8:
+        return None
+    frames = np.frombuffer(raw, np.uint8)[:n * W * H * 3].reshape(n, H, W, 3)
+    au = subprocess.run(
+        [ff, "-v", "error", "-ss", f"{pre:.3f}", "-i", src, "-ss", f"{a0 - pre:.3f}",
+         "-t", f"{dur:.3f}", "-ac", "1", "-ar", "16000", "-f", "f32le", "-"],
+        capture_output=True,
+    ).stdout
+    x = np.frombuffer(au, np.float32)
+    spf = max(1, 16000 // int(round(fps or 30)))
+    env = np.array([np.sqrt(np.mean(x[i * spf:(i + 1) * spf] ** 2) + 1e-12) for i in range(n)])
+    small = [cv2.resize(cv2.cvtColor(fr, cv2.COLOR_BGR2GRAY), (96, 54)).astype(np.float32) for fr in frames]
+    dlt = [0.0] + [float(np.mean(np.abs(small[i] - small[i - 1]))) for i in range(1, n)]
+    med = float(np.median([v for v in dlt if v])) if any(dlt) else 0.0
+    cuts = []
+    for i in range(1, n):
+        loc = dlt[max(1, i - 10):i + 10]
+        loc_med = float(np.median(loc)) if loc else med
+        if dlt[i] > 25 and loc_med and dlt[i] > 3 * loc_med:
+            cuts.append(round(a0 + i / max(fps, 1), 3))
+    tracks, prev = {}, {}
+    for idx in range(0, n, 2):
+        _, faces = det.detect(frames[idx])
+        if faces is None:
+            continue
+        g = cv2.cvtColor(frames[idx], cv2.COLOR_BGR2GRAY).astype(np.float32)
+        for f in faces:
+            fx, fy, fw, fh = f[:4]
+            if fh < 50:
+                continue
+            key = int((fx + fw / 2) // 80)
+            mx0, my0, mx1, my1 = f[10], f[11], f[12], f[13]
+            xa, xb = int(max(0, min(mx0, mx1) - 0.1 * fw)), int(min(W, max(mx0, mx1) + 0.1 * fw))
+            ya, yb = int(max(0, min(my0, my1) - 0.12 * fh)), int(min(H, max(my0, my1) + 0.15 * fh))
+            if yb <= ya + 2 or xb <= xa + 2:
+                continue
+            patch = cv2.resize(g[ya:yb, xa:xb], (32, 20))
+            patch = patch - patch.mean()
+            tr = tracks.setdefault(key, {"cx": [], "cy": [], "w": [], "h": [], "m": {}})
+            tr["cx"].append((fx + fw / 2) / sx)
+            tr["cy"].append((fy + fh / 2) / sy)
+            tr["w"].append(fw / sx)
+            tr["h"].append(fh / sy)
+            if key in prev and prev[key][0] == idx - 2:
+                tr["m"][idx] = float(np.mean(np.abs(patch - prev[key][1])))
+            prev[key] = (idx, patch)
+    scored = []
+    for tr in tracks.values():
+        if len(tr["cx"]) < 0.3 * max(1, n // 2):
+            continue
+        ids = sorted(tr["m"])
+        if len(ids) < 6:
+            corr = 0.0
+        else:
+            m = np.array([tr["m"][i] for i in ids])
+            e = env[ids]
+            corr = float(np.corrcoef(m, e)[0, 1]) if m.std() > 0 and e.std() > 0 else 0.0
+            if corr != corr:
+                corr = 0.0
+        scored.append({
+            "cx": float(np.median(tr["cx"])),
+            "cy": float(np.median(tr["cy"])),
+            "w": float(np.median(tr["w"])),
+            "h": float(np.median(tr["h"])),
+            "corr": corr,
+        })
+    if not scored:
+        return {"cuts": cuts, "multi": False, "cx": None, "corr": None, "tracks": []}
+    scored.sort(key=lambda r: -r["corr"])
+    best = scored[0]
+    return {
+        "cuts": cuts,
+        "multi": len(scored) >= 2,
+        "cx": best["cx"], "cy": best["cy"], "w": best["w"], "h": best["h"],
+        "corr": best["corr"],
+        "tracks": scored,
+    }
+
+
 def plan_side(proj, s, rows, SW, SH, o=SIDE, log=None, force_side=None):
     log = log if log is not None else []
     OW, OH = proj["width"], proj["height"]
@@ -562,7 +913,29 @@ def plan_side(proj, s, rows, SW, SH, o=SIDE, log=None, force_side=None):
     cfg = (proj.get("speakers") or {}).get(who, {})
     guest = s.get("speaker") == "guest"
     roi = s.get("face_roi") or cfg.get("roi")
-    mode = cfg.get("pick", "largest")
+    mode = cfg.get("pick") or s.get("pick") or "largest"
+    talk = None
+    if force_side is None:  # only on the first placement attempt, not the look-room retry
+        try:
+            ff = ik._which("ffmpeg", None)
+            talk = talking_face_analysis(ff, proj["src"], s, SW, SH, proj.get("fps", 30))
+        except Exception as exc:  # noqa: BLE001 — advisory only; framing must still run
+            log.append(f"  note shot {s['i']}: talking-face check skipped ({exc})")
+    if talk and talk.get("cuts"):
+        log.append(
+            f"  WARN shot {s['i']}: camera cut at " + ", ".join(f"{c:.2f}" for c in talk["cuts"])
+            + " — split this beat so each piece can be framed (face otherwise drifts mid-frame)"
+        )
+    if talk and talk.get("cx") is not None and talk.get("multi"):
+        if not cfg.get("pick") and not s.get("pick"):
+            mode = "talking"
+        if mode == "talking" and not roi:
+            pad_w, pad_h = talk["w"] * 0.85, talk["h"] * 0.85
+            roi = [talk["cx"] - talk["w"] / 2 - pad_w, talk["cy"] - talk["h"] / 2 - pad_h,
+                   talk["w"] + 2 * pad_w, talk["h"] + 2 * pad_h]
+            log.append(
+                f"  note shot {s['i']}: talking face x={talk['cx']:.0f} mouth-corr {talk['corr']:+.2f} (diarization + mouth check)"
+            )
 
     def even(v):
         return int(2 * round(v / 2))
@@ -719,9 +1092,19 @@ def plan_side(proj, s, rows, SW, SH, o=SIDE, log=None, force_side=None):
     if matte:
         s["matte"] = matte
     fco = (fcx - S["x"]) / S["w"]
+    if talk and talk.get("cx") is not None and face_pick_disagrees(fcx, talk["cx"]):
+        notes.append(
+            f"WARN talking face x={talk['cx']:.0f} (corr {talk['corr']:+.2f}) is not the framed face x={fcx:.0f}; "
+            "the person on screen may not be the speaker"
+        )
+    if 0.42 < fco < 0.58:
+        notes.append(
+            f"WARN face sits near the centre ({fco:.2f}W); keep the face on the side opposite the captions"
+        )
     s["framing"] = {"method": "side", "who": who, "zoom_start": round(OW / S["w"], 3), "zoom_end": round(OW / R["w"], 3),
                     "face_x_frac": round(fco, 3), "face_h_out": round(hm * OW / S["w"]), "text_side": side, "maxw": maxw,
-                    "yaw": round(yaw, 3), "others": len(bodies), "matte": matte, "top_touch": touch, "notes": notes}
+                    "yaw": round(yaw, 3), "others": len(bodies), "matte": matte, "top_touch": touch, "notes": notes,
+                    "talking_corr": None if not talk else talk.get("corr")}
     log.append(f"shot {s['i']:>2} {s.get('beat', ''):<22} {who:<6} face {'RIGHT' if side == 'left' else 'LEFT '} third "
                f"({fco:.2f}W) zoom {OW / S['w']:.2f}x->{OW / R['w']:.2f}x crop {S['x']},{S['y']} {S['w']}x{S['h']} "
                f"text {side} maxw {maxw} face_h {hm * OW / S['w']:.0f}px others {len(bodies)}"
@@ -840,12 +1223,45 @@ def measure_end(ff, src, s, last_w, next_clip_in, model, tail=0.15, fade_ms=25, 
     # B2 fade rule: the end fade starts only AFTER the last word has fully ended (never inside the word);
     # if the cut sits right on the acoustic end the fade shrinks (8 ms floor) instead of eating the word.
     fade = int(min(fade_ms, max(8, round((new - aend) * 1000))))
+    # B5 tight-next (2026-11-18): when the next word follows within ~20 ms, a cut at the ASR /
+    # dip end clips the last word (e.g. "crossover" then "you"). Keep full volume through the
+    # real tail, fade the next word in ~30 ms, and fill with room tone from this recording.
+    # Skip joins (the next clip starts at this out).
+    joined = next_clip_in is not None and abs(next_clip_in - out0) < 0.05
+    tail_env, tight_meta = None, None
+    if not joined:
+        # Real tail can sit a little past the ASR end (release of a final consonant).
+        full = aend
+        if asr_end is not None:
+            full = max(full, asr_end)
+            # Walk up to 80 ms past the ASR end while energy is still above the floor+6 dip.
+            k = I(asr_end)
+            last = k
+            while k < len(e) and T(k) <= (asr_end + 0.08):
+                if e[k] > floor + 6:
+                    last = k
+                k += 1
+            full = max(full, T(last))
+        tight_meta = plan_tight_tail(aend, nxt_asr, nxt_on, out0, fade_ms, full_until=full)
+        if tight_meta:
+            new = tight_meta["out_new"]
+            fade = tight_meta["fade_ms"]
+            need = tight_meta["tone"]["to"] - tight_meta["tone"]["from"]
+            src_t = find_room_tone(ff, src, need, avoid=[(a0, max(out0, aend) + 0.4)])
+            tail_env = complete_tail_env(tight_meta, src_t)
     lv = lambda t: float(np.mean(e[max(0, I(t) - 1):I(t) + 2])) if 0 <= I(t) < len(e) else floor  # noqa: E731
-    return {"floor": round(floor, 1), "asr_end": round(asr_end, 3) if asr_end else None, "acoustic_end": round(aend, 3),
+    out = {"floor": round(floor, 1), "asr_end": round(asr_end, 3) if asr_end else None, "acoustic_end": round(aend, 3),
             "next_onset": round(nxt_on, 3) if nxt_on else None, "next_word": round(nxt_asr, 3) if nxt_asr else None,
             "out_old": out0, "out_new": new, "ext_ms": int(round((new - out0) * 1000)), "fade_ms": int(fade),
             "out_level_db": round(lv(new), 1), "out_grade": dip_grade(lv(new), floor),
             "old_out_grade": dip_grade(lv(out0), floor)}
+    if tight_meta:
+        out["tight_next"] = True
+        out["next_gap_s"] = tight_meta["next_gap_s"]
+        out["full_until"] = tight_meta["full_until"]
+        if tail_env:
+            out["tail_env"] = tail_env
+    return out
 
 
 def cmd_vet(a) -> None:
@@ -873,7 +1289,7 @@ def cmd_vet(a) -> None:
         out0 = float(s.get("audio_out") or (s["src_in"] + s["frames"] / fps))
         s.setdefault("audio_out", out0)
         nxt = shots[k + 1] if k + 1 < len(shots) and shots[k + 1]["kind"] == "clip" else None
-        key = sha(src_id(src), s["src_in"], out0, script, a.tail, a.fade_ms, bool(nxt and abs(float(nxt["src_in"]) - out0) < 0.05))
+        key = sha(STUTTER_V, src_id(src), s["src_in"], out0, script, a.tail, a.fade_ms, bool(nxt and abs(float(nxt["src_in"]) - out0) < 0.05))
         r = cache.get(key)
         if r is None:
             if model is None:
@@ -895,6 +1311,21 @@ def cmd_vet(a) -> None:
             floor = float(np.percentile(big, 8)) if len(big) else -70.0
             ein = env_db(pcm(ff, src, float(s["src_in"]) - 0.02, float(s["src_in"]) + 0.03))
             lin = float(np.mean(ein)) if len(ein) else floor
+            # Collapsed-repeat stutter: ASR often hears one copy of "do you, do you". Scan
+            # energy around the in-point and cut in the pause when two similar bursts appear.
+            asr_repeat = any("stutter" in i for i in issues)
+            pre = pcm(ff, src, max(0.0, float(s["src_in"]) - 0.15), min(out0, float(s["src_in"]) + 1.0))
+            e_in = env_db(pre)
+            hop = 0.01
+            stt = detect_collapsed_repeat(
+                e_in, max(0.0, float(s["src_in"]) - 0.15), hop, floor, float(s["src_in"]),
+                asr_repeat=asr_repeat,
+            )
+            if stt:
+                issues.append(
+                    f"collapsed repeat (energy) {stt['first'][0]:.2f}-{stt['first'][1]:.2f} then "
+                    f"{stt['second'][0]:.2f}-{stt['second'][1]:.2f}; cut in pause at {stt['in_new']:.2f}"
+                )
             end = measure_end(ff, src, s, WD[str(s["i"])][-1]["w"], float(nxt["src_in"]) if nxt else None, model,
                               a.tail, a.fade_ms, a.allow_shorten)
             # headroom feasibility (5 source frames): room above the head for the margin
@@ -919,6 +1350,7 @@ def cmd_vet(a) -> None:
             head = min(tops) if tops else None
             r = {"issues": issues, "asr_vad_on": hyp[True], "asr_vad_off": hyp[False], "floor": round(floor, 1),
                  "in_level_db": round(lin, 1), "in_grade": dip_grade(lin, floor), "end": end,
+                 "stutter_cut": stt,
                  "headroom_x_face": round(head, 2) if head is not None else None,
                  "headroom": ("NO FACE" if head is None else "OK" if head >= 0.30 else
                               "TIGHT (source-limited: allow_top_touch or another span)")}
@@ -985,21 +1417,57 @@ def cmd_vet(a) -> None:
             print(f"       note: in-point {r['in_level_db']} dB vs floor {r['floor']} (sound right before the in; fine if the fade-in hides it)")
     if edit:
         __import__("editcheck").print_stranger(proj, WD)
+    for w in shots_beat_duration_flags(shots):
+        print(f"       {w}")
+    for s, r in rows:
+        if r.get("stutter_cut"):
+            stt = r["stutter_cut"]
+            print(f"       WARN shot {s['i']}: collapsed repeat; proposed in {s['src_in']:.2f} -> {stt['in_new']:.2f} "
+                  "(cut in the pause; --write applies it)")
+        if r.get("end", {}).get("tight_next"):
+            e = r["end"]
+            tone = (e.get("tail_env") or {}).get("tone")
+            print(f"       WARN shot {s['i']}: next word follows in {e.get('next_gap_s', 0):.3f}s; "
+                  f"B5 tail holds through {e.get('full_until')} then 30 ms fade"
+                  + ("" if tone and tone.get("src_t") is not None else " (no room tone found)"))
     if a.write:
         for f in (pp, wp):
             b = f.with_name(f.stem + ".pre_vet" + f.suffix)
             if not b.exists():
                 shutil.copy2(f, b)
         for s, r in rows:
+            stt = r.get("stutter_cut")
+            if stt and stt.get("in_new") and stt["in_new"] > float(s["src_in"]) + 0.04:
+                old_in = float(s["src_in"])
+                dt = stt["in_new"] - old_in
+                s["src_in"] = stt["in_new"]
+                s["frames"] = math.ceil(round((float(s["audio_out"]) - s["src_in"]) * fps, 6))
+                rows_w = [dict(w) for w in WD.get(str(s["i"]), []) if w["e"] > dt]
+                for w in rows_w:
+                    w["t"] = round(max(0.0, float(w["t"]) - dt), 3)
+                    w["e"] = round(max(w["t"] + 0.02, float(w["e"]) - dt), 3)
+                if rows_w:
+                    WD[str(s["i"])] = rows_w
+                changed.append(f"shot {s['i']}: stutter in {old_in:.2f} -> {s['src_in']:.2f} "
+                               f"(cut in pause, -{int(round(dt * 1000))} ms), frames {s['frames']}")
             e = r["end"]
+            if e.get("tail_env"):
+                s["tail_env"] = e["tail_env"]
+            if abs(e["out_new"] - float(s["audio_out"])) < 1e-6 and s.get("fade_out_ms") == e["fade_ms"] and not e.get("tail_env"):
+                continue
             if abs(e["out_new"] - float(s["audio_out"])) < 1e-6 and s.get("fade_out_ms") == e["fade_ms"]:
+                if e.get("tail_env"):
+                    changed.append(f"shot {s['i']}: B5 tight-tail envelope attached (out unchanged at {e['out_new']:.2f})")
                 continue
             old_f = s["frames"]
             s["audio_out"], s["fade_out_ms"] = e["out_new"], e["fade_ms"]
             s["frames"] = math.ceil(round((e["out_new"] - float(s["src_in"])) * fps, 6))
             lw = WD[str(s["i"])][-1]
             lw["e"] = round(min(e["out_new"], max(e["acoustic_end"], float(s["src_in"]) + lw["e"])) - float(s["src_in"]), 3)
-            changed.append(f"shot {s['i']}: out {e['out_old']:.2f} -> {e['out_new']:.2f} ({e['ext_ms']:+d} ms), frames {old_f} -> {s['frames']}, fade {e['fade_ms']} ms")
+            note = f"shot {s['i']}: out {e['out_old']:.2f} -> {e['out_new']:.2f} ({e['ext_ms']:+d} ms), frames {old_f} -> {s['frames']}, fade {e['fade_ms']} ms"
+            if e.get("tight_next"):
+                note += " (B5 tight-tail + room tone)"
+            changed.append(note)
         fix_end_timeline(proj, changed)
         _save_json(pp, proj)
         _save_json(wp, WD)
@@ -1086,6 +1554,7 @@ def cmd_edges(a) -> None:
         runon = me["acoustic_end"] > out_src + 0.02     # next word runs straight on: the cut is a dip, not an end
         if script and not runon and fade_start < me["acoustic_end"] - 0.01:
             fl.append("FADE")
+        tight_warn = bool(me.get("tight_next") and not s.get("tail_env"))
         r = {"shot": s["i"], "beat": s.get("beat"), "who": s.get("who"), "tl": [round(t0, 3), round(t1, 3)],
              "script": " ".join(script), "heard": " ".join(heard), "in": " ".join(x["w"] for x in Ain),
              "out": " ".join(x["w"] for x in Ao), "fillers": fills, "missing": missing, "extra": extra,
@@ -1097,6 +1566,11 @@ def cmd_edges(a) -> None:
         print(f"    script: {r['script']}\n    heard : {r['heard']}\n    IN    : {r['in']}\n    OUT   : {r['out']}")
         print(f"    fade starts {fade_start:.3f}s src, last word ends {me['acoustic_end']:.3f}s src"
               + ("  (run-on: next word follows with no pause; cut sits in the dip, listen)" if runon else ""))
+        if tight_warn:
+            print("    WARN TIGHT: next word follows within ~20 ms and no B5 tail envelope; last word may be clipped")
+        r["tight_next"] = tight_warn or bool(s.get("tail_env"))
+    for w in shots_beat_duration_flags(proj["shots"]):
+        print(f"    {w}")
     out = Path(a.out) if a.out else pp.with_name(final.stem + "_edges.json")
     _save_json(out, {"final": str(final), "shots": rep_, "flagged": flagged})
     print(f"edges: {len(flagged)} flagged {flagged} -> {out}")

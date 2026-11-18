@@ -32,6 +32,11 @@ and off, acoustic end + proposed out, dip grade vs room floor, headroom.
 Not gates any more: multi-model ASR, full-file ASR, every-frame faces (`--classic-faces`
 diagnostic), voiceprint (diagnostic). Why: `LESSONS_LEARNED.md` D7.
 
+The four pass/fail gates above are unchanged (2026-11-18). Extra checks only flag problems:
+short beats (< 4.0 s), tight next-word endings without a B5 envelope, collapsed-repeat
+in-points, talking-face / mid-frame-face WARNs from `frame`. They never turn a qc PASS into
+a FAIL.
+
 
 Report the measured number for each line. If you did not measure it, do not claim it.
 

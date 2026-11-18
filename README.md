@@ -30,7 +30,7 @@ decode, previews and transcription. The deliverable is always libx264 CRF 15.
 | Path | What |
 |---|---|
 | `SKILL.md` | procedure, gates, contracts |
-| `RULES.md` | running rules 000–030 |
+| `RULES.md` | running rules 000–042 |
 | `TOOLS.md` | setup, ffmpeg per OS, hardware tiers, transcription, diarization, measured costs |
 | `ASSETS.md` | bundled music/SFX/logo/fonts and their provenance |
 | `LESSONS_LEARNED.md` | session lessons, workarounds, kit TODOs |
@@ -38,4 +38,6 @@ decode, previews and transcription. The deliverable is always libx264 CRF 15.
 | `references/` | line selection, pipeline, design system, QC, troubleshooting |
 | `scripts/introkit.py` | entry point; `sidekit.py` (side framing, vet, assemble, qc gates); `transcribe.py`, `speakers.py` libraries; `project.example.json` |
 | `assets/` | music, sfx, logo, fonts, `models/` (YuNet face detector + licence) |
-| `requirements*.txt`, `setup.ps1`, `setup.sh` | environment |
+| `requirements*.txt`, `setup.ps1`, `setup.sh` | environment (`requirements-upscale.txt` is optional) |
+| `scripts/upscale.py` | Real-ESRGAN zoomed-shot pass (optional extras) |
+| `scripts/test_smoke.py` | smoke checks for the 2026-11-18 helpers |

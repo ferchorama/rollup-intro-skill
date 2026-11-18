@@ -418,3 +418,35 @@ so qc only WARNs when another face clearly follows the speech better or the visi
 clearly does not, and says "ambiguous" otherwise. Look at a WARN shot; never re-cut on an
 "ambiguous".
 
+## G. Session 2026-11-17/18 (Tristan Thompson + Lord Chris Holmes)
+
+### G1. Tight next-word endings clip the last word (B5)
+"crossover" ended at 848.740 and "you" started at 848.755 — a 15 ms gap. Cutting at the ASR
+word end (or at the energy dip) clipped "-ver". The ending that survived QC: keep full volume
+through the real tail (~848.800), fade "you" in 30 ms, and fill the rest with room tone from
+the same recording (a quiet stretch after the line) before the final fade. A later out-point
+alone still sounded cut; room tone after a short fade of the next word did not.
+
+### G2. ASR collapses repeated phrases
+Whisper large-v3-turbo heard Robbie's "do you, do you think that's true" as a single "do you".
+The 10 ms energy envelope showed two 150 ms bursts with a 170 ms pause. The in-point moved
+into that pause (~70 ms before the second "do"). Re-check energy around the in, not just the
+transcript, when a line feels like it stutters.
+
+### G3. The face on screen must be the person speaking
+On a two-shot, "largest" / look-room picked Robbie while Andy was talking ("Anthropic IPO this
+week"). Fix: mouth-motion vs speech correlation to pick the talking face, plus an explicit
+`speakers.andy.pick: rightmost` when seating is known. Split the beat at a mid-line camera cut
+or the face sits in the middle and captions overlay it. Keep the face on the side opposite the
+captions.
+
+### G4. Upscale the zoom, do not drop it
+Fernando asked to keep the zoom and clean up blurry punched-in faces. Crop the zoomed source
+region, Real-ESRGAN x4 (general + wdn at 0.5 denoise) on GPU, then the same push / grade /
+captions. Audio must be a stream copy, verified by hash, so a B5 ending is not re-cut. Apply
+above 1.15x zoom.
+
+### G5. Four-second floor
+Every speaker beat has to run at least 4.0 s. Extend a short hook to the next natural word
+boundary; never pad silence. Host lines stay 4-6 s.
+

@@ -78,8 +78,12 @@ downstream; derive it.
                  "pieces": [{"in": 858.64, "out": 862.12, "text": "Tokenization is *eating* finance."}]}]}}
 ```
 Optional `"out_dir": "D:/elsewhere"` moves the deliverables (default `<src folder>/intros`).
+Optional `"structure": ["guest", "andy", "robbie", "guest"]` (or `assemble --structure ...`)
+names the expected speaker of each beat; the guest always opens; a mismatch WARNs.
+Optional `"upscale": true|false` pins the zoomed-shot AI pass at build.
 Optional per beat: `"hook": {"type": "prediction", "strength": 4, "curiosity": 5, "clarity": 4,
 "share": 4}` (the line-selection scoring; assemble ignores it).
+Every beat must run >= 4.0 s (host lines 4-6 s); `assemble` / `vet` WARN on short beats.
 `*word` = Anton claim (gold). `assemble --sets sets.json --set A` writes project_A.json,
 words_A.json (script spelling, ASR times, absolute `src`) and assemble_A.txt into
 `<src folder>/intros/work/` (or `<out_dir>/work/`, or `--out`); black 10 f between beats,
@@ -104,6 +108,9 @@ Rules:
   clear of the ON AIR bug, chyron, partner band and ticker.
 - **Face framing comes from `introkit.py frame`, before this stage** (see below). Do not
   hand-tune zoom, and do not add a centre zoom.
+- **Zoomed shots (crop zoom > 1.15x)** are AI-upscaled at `build` when extras + weights are
+  present: crop the source region, Real-ESRGAN x4 at 0.5 denoise, then the same push / grade.
+  `--no-upscale` skips it. Audio is stream-copied and hash-verified.
 - Legacy only: a shot with `"punch"` and no `"push"` still gets the old centre zoompan
   (`zoompan=z='1+P*on/N':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'`). The build warns about it, because a
   centre zoom cuts the head off a guest who sits near the top of the frame (C6). Re-run `frame`
@@ -240,7 +247,12 @@ Reference project: `K:\Lior Messika\intros\work\project_B2.framed.json` (`build_
   `[last clip start, total]`.
 - **dry run:** `build ... --audio-only` (alias `--dry-run`) stops after the level lines.
 - **edges:** `introkit.py edges --final F --project P --words W` -> `<final stem>_edges.json`;
-  exits 1 when any shot is flagged.
+  exits 1 when any shot is flagged (FIRST / LAST / FILLER / DIFF / FADE). Tight next-word
+  endings without a B5 `tail_env`, and beats under 4.0 s, print as WARNs only.
+- **vet --write also:** attaches a B5 `tail_env` when the next word follows within ~20 ms, and
+  moves the in-point into the pause when energy shows a collapsed ASR repeat.
+- **TheStitcher-V2:** always `--no-dynamics`. Subscribe bumper = gain-only copy at -14 LUFS,
+  true peak <= -1. Interview audio is never changed.
 
 ## Per-shot audio level (2026-11-03)
 
