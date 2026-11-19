@@ -1,5 +1,30 @@
 # Changelog
 
+## 2026-11-19 (the stitcher is part of the skill, and it levels the delivery)
+Stitching a delivery — hook + subscribe bumper + full episode — used to be an external desktop app,
+so the recipe only existed on one machine. It is now **`scripts/stitch.py` in this skill**: ffmpeg
+and ffprobe plus the standard library, no app, no packages, no GPU, any OS (RULE 030, RULE 036).
+- **Same join, measured the same way:** black heads/tails measured frame by frame (`signalstats`),
+  keyframes read from packet timestamps, three copied picture cuts remuxed to a 1/30000 timescale and
+  concatenated through Annex B, `-frames:v` never `-t`, and a hook re-encoded once (crf 14) when its
+  cut frame is not a keyframe.
+- **The sound is one timeline:** the intro's sound to its real end, the clip's from where the intro's
+  picture was cut, the episode's from where the clip's picture stops, summed with
+  `amix=normalize=0` and ducked by two sidechain compressors. The episode's audio is never
+  processed (the dynamics chain is `--dynamics`, off by default, RULE 036).
+- **The volume step is now measured, not assumed (RULE 043).** `--level segment` (default) measures
+  integrated loudness and true peak of all three files and gain-matches the hook and the subscribe
+  clip to the episode, gain only, capped so true peak stays <= -1.0 dBTP. Measured on the Farokh
+  delivery: intro -14.15 LUFS -> -13.43 (+0.72 dB), subscribe clip -14.48 -> -13.44 (+1.04 dB, the
+  peak ceiling binding), episode untouched at -13.43; finished file -13.44 LUFS, -1.02 dBTP.
+  `--measure` prints those numbers without writing anything; `--level off` disables the pass.
+- **It verifies before it renames:** frames against the sum of the pieces, picture and sound
+  durations against each other, timescale, frame spacing, and decoded-frame checksums of sampled
+  frames against the pieces joined. A failure leaves `<out>.part.mp4` and does not write the
+  delivery.
+- Docs: `SKILL.md` step 10, `TOOLS.md` section 10, `RULES.md` 036 (rewritten) and 043 (new),
+  `references/pipeline.md`. No reference to a separate stitcher application remains.
+
 ## 2026-11-18 (self-bootstrapping setup)
 The skill now installs everything a new computer needs, with no prior knowledge of the
 requirements. `introkit setup` (or `setup.ps1` / `setup.sh`) is the single entry point;

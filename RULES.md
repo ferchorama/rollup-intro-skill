@@ -171,10 +171,17 @@ start out at its dips with 20-40 ms fades. Start a piece after the previous word
 One build, one `qc` + `edges` per file, then report and stop. Fernando does the listening QC; no
 rebuild loops without his request.
 
-## 036 — TheStitcher-V2 runs with --no-dynamics
-The interview audio is never changed by the stitcher: always pass `--no-dynamics`. The subscribe
-bumper is a gain-only copy at -14 LUFS with true peak <= -1 (never a dynamics pass, never a
-replace of the original bumper file).
+## 036 — Stitching is part of the skill, and the episode audio is never changed (2026-11-19)
+A stitched delivery (hook + subscribe bumper + full episode) is made by `scripts/stitch.py`, which
+ships with this skill: ffmpeg plus the standard library, no app, no extra install, any OS. The
+episode's audio is never changed — no dynamics chain, no levelling, no compression. `--dynamics`
+exists only to reproduce the old Premiere track effect, is off by default, and is passed only when a
+delivery is explicitly meant to reproduce it.
+
+The hook and the subscribe clip *are* gain-matched to the episode (RULE 043). The raw subscribe
+masters measure about **-18.9 LUFS** against an episode's **-13.4**, which is an audible hole in the
+middle of the delivery; a gain-only copy is the fix, never a dynamics pass and never an edit of the
+source file.
 
 ## 037 — Zoomed shots are AI-upscaled (2026-11-18)
 Clip shots whose crop zoom is above 1.15x are upscaled with Real-ESRGAN (realesr-general-x4v3
@@ -205,6 +212,20 @@ two bursts on the energy envelope and move the in-point into the pause. `vet --w
 Every speaker segment or beat must run >= 4.0 s. Reject or extend candidates shorter than that
 to a natural word boundary; never pad with silence. Host lines stay 4-6 s. The check WARNs only.
 
+## 043 — A stitched delivery is one level, and the episode is the reference (2026-11-19)
+Measure before you join: `python scripts/stitch.py HOOK CLIP EPISODE -o OUT.mp4 --measure` prints
+integrated loudness (LUFS) and true peak (dBTP) for all three files and the gains a stitch would
+apply. The episode is the reference — it is the long piece and its audio is never touched — so the
+hook and the subscribe clip are gain-matched to it, gain only, capped so true peak stays
+`<= -1.0 dBTP` (`--target-tp`).
+
+Report the before/after number per piece. The intro is usually already within ~0.7 dB of the episode
+(it is cut from the same source and mastered to the house -14 LUFS), so expect a fraction of a dB
+there and say so rather than "fixing" it. The subscribe clip is the one that is genuinely quiet.
+
 ## 030 — Self-contained skill
 Everything runs from the skill folder and its env folder: no absolute user paths, no
 external apps. Diarization uses the bundled ONNX embedding path by default (no token).
+This includes the stitcher (`scripts/stitch.py`, RULE 036): a delivery must never depend on a
+separate application being installed on one particular machine.
+

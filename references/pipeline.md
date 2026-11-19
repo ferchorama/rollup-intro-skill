@@ -251,8 +251,11 @@ Reference project: `K:\Lior Messika\intros\work\project_B2.framed.json` (`build_
   endings without a B5 `tail_env`, and beats under 4.0 s, print as WARNs only.
 - **vet --write also:** attaches a B5 `tail_env` when the next word follows within ~20 ms, and
   moves the in-point into the pause when energy shows a collapsed ASR repeat.
-- **TheStitcher-V2:** always `--no-dynamics`. Subscribe bumper = gain-only copy at -14 LUFS,
-  true peak <= -1. Interview audio is never changed.
+- **Stitching the delivery:** `python scripts/stitch.py HOOK SUBSCRIBE EPISODE -o OUT.mp4`
+  (part of the skill, ffmpeg only — `TOOLS.md` section 10). It copies the episode's picture and
+  audio, never runs the dynamics chain (RULE 036), and gain-matches the hook and the clip to the
+  episode's measured LUFS, gain only, true peak <= -1.0 dBTP (RULE 043). `--measure` prints the
+  numbers first; `--level off` disables the pass.
 
 ## Per-shot audio level (2026-11-03)
 

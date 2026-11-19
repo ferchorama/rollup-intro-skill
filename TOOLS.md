@@ -1,4 +1,4 @@
-﻿# Tools: setup, hardware and exact usage
+# Tools: setup, hardware and exact usage
 
 Everything the skill runs lives in **this folder**. Nothing outside it is required apart from
 ffmpeg (and even that can be installed portably into the env folder). Paths in this file are
@@ -266,6 +266,58 @@ Windows PowerShell: variables are case-insensitive (`$s` clobbers `$S`); `-f` fo
 follows the locale decimal separator; write Python to UTF-8 `.py` files instead of long
 `python -c` one-liners. Always review frames at **full width**, never a working crop.
 
+## 10. Stitching the delivery: `scripts/stitch.py` (2026-11-19)
+
+Joins the finished intro, a subscribe bumper and the full episode into one file. **Part of the
+skill**: ffmpeg + ffprobe and the Python standard library, nothing else — no app to install, no
+packages, no GPU. Any Python 3.9+ will run it, and it finds ffmpeg the same way `introkit.py` does
+(`STITCH_FFMPEG` / `INTROKIT_FFMPEG` → `PATH` → `<env>/tools/ffmpeg/bin`).
+
+```bat
+python scripts/stitch.py "INTRO.mp4" "SUBSCRIBE.mp4" "EPISODE.mp4" -o "Episode_New_Intro.mp4"
+python scripts/stitch.py INTRO SUBSCRIBE EPISODE --measure      :: loudness only, writes nothing
+python scripts/stitch.py INTRO SUBSCRIBE EPISODE -o OUT --dry-run  :: plan only, writes nothing
+```
+
+| Option | What it does |
+|---|---|
+| `--overlap N` | frames of the subscribe clip's tail that run under the episode (default: its **measured** black tail) |
+| `--hook-overlap N` | frames of the intro's tail the clip starts over (default: the intro's measured black tail; `0` turns it off) |
+| `--level segment` | **default.** Gain-match the intro and the clip to the episode's integrated LUFS |
+| `--level off` / `--level -14` | no level pass / the old fixed -14 LUFS target |
+| `--target-tp -1.0` | true-peak ceiling for the level pass (dBTP) |
+| `--strategy mix` / `drop` | `mix` sums the overlap (re-encodes the sound, default); `drop` cuts the clip's sound where its picture cuts (copies it, loses the clip's last `overlap` frames of sound) |
+| `--no-duck` | do not duck the clip's tail under the episode's speech |
+| `--dynamics` | the operator's Premiere chain. **Off by default** — the episode audio is never changed (RULE 036) |
+| `--audio-bitrate` / `--crf` / `--preset` | final AAC (default 192k), re-encode quality (default crf 14 / medium) |
+| `--work DIR` | conformed pieces and the join (default `<out folder>/_stitch_work/<out stem>`) |
+| `--no-verify` | skip the measured verification. **Do not ship without it** |
+
+How the join works, and why it is built this way:
+
+- **The picture is copied.** Three cuts, each remuxed to `-video_track_timescale 30000` (mixed
+  timescales concatenate "successfully" and play at the wrong speed — the intro ships at 1/15360 and
+  the episode at 1/30000), then concatenated through **Annex B** (`h264_mp4toannexb`) so each piece
+  carries its own SPS/PPS and a piece whose profile differs still decodes.
+- **`-frames:v`, never `-t`.** A duration is a time and ffmpeg decides which frame it includes; a
+  frame count cannot round.
+- **A cut must be a keyframe.** The intro's black tail almost never starts on one, so the hook is
+  re-encoded once (crf 14, `-fps_mode passthrough`, IDRs at 0 and at the cut). The delivered intro
+  file is never modified.
+- **The sound is one timeline.** The intro's sound runs to its real end, the clip's sound starts where
+  the intro's *picture* was cut, the episode's sound starts where the clip's *picture* stops, and
+  `amix=normalize=0` sums them (the default would drop both by 6 dB in the one second the delivery is
+  trying to make continuous). Two sidechain compressors duck the outgoing piece under the incoming
+  one.
+- **It verifies, and only then renames.** Frame count against the sum of the pieces, picture and
+  sound durations against each other, timescale, frame spacing, and decoded-frame checksums of
+  sampled frames against the pieces that were joined. A failed check leaves `<out>.part.mp4` and does
+  not write the delivery.
+
+Cost on a 16-minute episode: about 4-5 minutes cold (two short re-encodes, the copy join, one AAC
+encode, the frame count), and seconds when the conformed pieces are cached in `--work`.
+
+
 ## Output folder (2026-11-03)
 
 **Output location (default since 2026-11-03):** `<folder of the source video>\intros\`: finals `<name>.mp4` plus `LINE_SETS.md`, `CUTLIST.md`, `QC_REPORT.md`; scratch (sets.json, project/words json, vet cache, qc json, contact sheets, build `work/`) in `intros\work\`. Created if missing. Override: `build --out DIR` (CLI wins), else `out_dir` in sets.json / the project (relative to that file); `assemble --out DIR` moves only the json files. Example: `H:\Show\Ep 12\Ep 12.mp4` -> `H:\Show\Ep 12\intros\THE_ROLLUP_<Guest>_ColdOpen_A.mp4`.
@@ -294,6 +346,7 @@ New in 2026-11-13: accurate FFmpeg seeks (`scripts/ffseek.py`), richer `probe`, 
 | graphics | Pillow, numpy, bundled fonts and logo |
 | audio | numpy, bundled music/SFX, ffmpeg ebur128 |
 | mux / deliverable | ffmpeg libx264 CRF 15 + AAC |
+| stitch delivery | `scripts/stitch.py` (hook + subscribe clip + episode; ffmpeg only, section 10) |
 | QC | ffmpeg ebur128, `introkit.py qc --faces` (YuNet), `transcribe` on the deliverable, numpy |
 | metrics | `introkit.py metrics --final F --project P --words W` (cut-edge energy, loudness, size, A/V skew; optional `--asr`) |
 

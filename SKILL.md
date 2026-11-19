@@ -140,8 +140,10 @@ within 0.3 dB of them.
 **Build once, then hand off.** Build each version ONCE, run ONE `qc` (+ `edges`) per file,
 report, and stop: Fernando does the listening QC himself. No rebuild loops unless he asks.
 
-**TheStitcher-V2:** when a stitched delivery is asked for, always run it with `--no-dynamics` so
-the interview audio is never changed (no compression / levelling on the episode).
+**Stitching a delivery** (hook + subscribe bumper + full episode) is `scripts/stitch.py`, part of
+this skill: ffmpeg plus the standard library, no app and no install, any OS. It leaves the episode's
+audio untouched (no dynamics chain), gain-matches the hook and the clip to the episode's own measured
+loudness (RULE 043), and verifies what it wrote. See step 10.
 
 ## QC: four decisive gates in one command (details in `references/qc.md`)
 
@@ -271,9 +273,7 @@ introkit.py qc  --final F.mp4 --project P.framed.json [--words W.json] [--out qc
    Zoomed shots (crop zoom > 1.15x) are AI-upscaled (Real-ESRGAN x4, 0.5 denoise) **by default**
    after setup. `--no-upscale` skips it, `--upscale` requires it. Audio is stream-copied and
    hash-verified after an upscale build. Review with `introkit.py preview`, never ship the preview.
-   When stitching the full episode, TheStitcher-V2 always runs with `--no-dynamics`. Use a
-   gain-only copy of the subscribe bumper at -14 LUFS, true peak <= -1; never change the
-   interview audio.
+   Stitching the full episode is a separate step (step 10), not part of `build`.
 9. **QC once:** `introkit.py qc --final intros/NAME.mp4 --project project_A.framed.json --out
    intros/work/qc_A.json`. Ship only on PASS; look at the contact sheet; listen to LISTEN rows;
    look at any SPEAKER WARN shot (advisory: it never blocks a PASS).
@@ -282,6 +282,27 @@ introkit.py qc  --final F.mp4 --project P.framed.json [--words W.json] [--out qc
    words_A.json` (edge ASR on the delivered mix; FIRST / LAST / FILLER / DIFF / FADE flags).
    **Build once and hand off** (B2 house style): one build, one qc + edges per file, report the
    paths, hook text and any flags; Fernando QCs by ear. Re-build only on his request.
+10. **Stitch the delivery** (only when the episode is wanted as one file): `python
+    scripts/stitch.py INTRO.mp4 SUBSCRIBE.mp4 EPISODE.mp4 -o "<Episode>_New_Intro.mp4"`. It is a
+    *portable* part of the skill — ffmpeg and the standard library, nothing else (RULE 030), so it
+    works on any machine that can run the rest of the kit. Reads its own measurements first
+    (`--measure` prints all three files' LUFS/dBTP and the gains it would apply), then:
+
+    - **hook overlap** = the intro's *measured* black tail: the subscribe clip's picture starts where
+      that black starts and the intro's sound plays on under it, ducked;
+    - **overlap** = the subscribe clip's *measured* black tail: the episode's picture starts where
+      that black starts and the clip's sound runs under the episode's opening, ducked;
+    - **the episode's picture and audio are copied**, never re-encoded, and never processed: the
+      dynamics chain is OFF by default (RULE 036);
+    - **level** (RULE 043): hook and clip gain-matched to the episode's own LUFS, gain only, true
+      peak ≤ -1.0 dBTP. `--level off` disables it, `--level -14` reproduces the old fixed target;
+    - **verification**: frame count against the sum of the pieces, picture and sound durations
+      against each other, timescale, frame spacing, and decoded-frame checksums of sampled frames
+      against the pieces that were joined. It writes `<out>.part.mp4` and renames only on a pass.
+
+    A cut that is not a keyframe costs one re-encode of the hook (crf 14) so an IDR can land there —
+    say so in the report; the delivered intro file itself is never modified. Report the measured
+    level of each piece and of the finished file.
 
 ## Motion and type contract
 
