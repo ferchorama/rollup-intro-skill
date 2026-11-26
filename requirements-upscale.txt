@@ -1,0 +1,4 @@
+# Upscale extras: Real-ESRGAN zoomed-shot pass. Installed by `introkit setup`
+# (and by setup.ps1 / setup.sh). After setup, upscale is on by default at `build`.
+# GPU (CUDA) is used when torch can see a device; otherwise the upscaler runs on CPU (float32).
+torch>=2.1

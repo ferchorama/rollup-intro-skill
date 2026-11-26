@@ -1,0 +1,31 @@
+[project]
+name = "rollup-intro-skill"
+version = "1.0.0"
+description = "The Rollup ~32s broadcast cold-open builder."
+requires-python = ">=3.11"
+dependencies = [
+    "numpy>=1.26,<3",
+    "pillow>=10.0",
+    "opencv-python-headless>=4.8",
+    "faster-whisper>=1.2.1,<2",
+    "ctranslate2>=4.5,<5",
+    "av>=11,<19",
+    "huggingface-hub>=0.23",
+    "psutil>=5.9",
+    "scipy>=1.11",
+    "onnxruntime>=1.18",
+]
+
+# torch (Real-ESRGAN) and the CUDA NVIDIA wheels are installed by
+# scripts/setupkit.py from the official PyTorch / NVIDIA indexes.
+[project.optional-dependencies]
+upscale = [
+    "torch>=2.1",
+]
+cuda = [
+    "nvidia-cublas-cu12>=12.4.5.8 ; sys_platform == 'win32' or sys_platform == 'linux'",
+    "nvidia-cudnn-cu12>=9.0,<10 ; sys_platform == 'win32' or sys_platform == 'linux'",
+]
+
+[tool.uv]
+package = false

@@ -1,0 +1,5 @@
+# NVIDIA only (Windows / Linux). setup installs this automatically when nvidia-smi works,
+# or with -Cuda yes / --cuda yes. CTranslate2 loads these cuBLAS / cuDNN wheels from the venv
+# (introkit adds them to the DLL / library search path before importing it).
+nvidia-cublas-cu12>=12.4.5.8 ; sys_platform == "win32" or sys_platform == "linux"
+nvidia-cudnn-cu12>=9.0,<10   ; sys_platform == "win32" or sys_platform == "linux"
